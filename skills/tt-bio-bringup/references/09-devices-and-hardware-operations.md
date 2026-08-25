@@ -274,7 +274,11 @@ bring-up.
 ## 10. Daily hygiene
 
 **Before a benchmark** (`05-perf-method-and-roofline.md` covers what to measure): confirm no other process
-holds a device fd (`ls -l /proc/*/fd 2>/dev/null | grep -c tenstorrent`); pin `TT_VISIBLE_DEVICES` and
+holds a device fd. `ls -l /proc/*/fd | grep -c tenstorrent` is the wrong check twice over: as a
+non-root user `/proc/<pid>/fd` is readable only for your own processes, so it reports 0 holders on a
+box where another user holds every card, and `grep -c` exits 1 when the count is 0, which is the
+outcome you wanted. Use `sudo fuser -v /dev/tenstorrent/*`, or `sudo lsof /dev/tenstorrent/*`, and
+read the process list rather than a count. Then pin `TT_VISIBLE_DEVICES` and
 verify the process sees exactly 1 device; run one warm-up pass and never report the cold first run.
 
 **Before a parity or bit-exact run:** pin to a card with a clean history, reason written next to the pin;

@@ -46,16 +46,19 @@ are porting into. Find them once, at the start of the session, and pass the path
 spawn:
 
 ```bash
-SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
 test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
     echo "NOT installed: nothing matched"; false; }
 ```
 
-Two details, both load-bearing. `-L` follows symlinks, and the personal install is a symlink, so
-plain `find -type d` returns nothing on a correctly installed skill. And test the result rather than
+Three details, all load-bearing. `-L` follows symlinks, and the personal install is a symlink, so
+plain `find -type d` returns nothing on a correctly installed skill. Test the result rather than
 reading it, because `find` exits 0 when it matched nothing, so a missing skill looks like a
-successful search. `references/`, `templates/` and `gates/` are all under `$SKILL`.
+successful search. And `export` it: `port_gate.py` runs a `--run` command through `bash -c`, which
+inherits exported variables only, so a plain assignment expands `"$SKILL/examples/..."` to
+`"/examples/..."` inside the gate and the gate reports that your capture script does not exist.
+`references/`, `templates/` and `gates/` are all under `$SKILL`.
 
 If nothing matched, you are working from a plain clone rather than an install. That is fine: use the
 clone's own path as `$SKILL`. Copy `$SKILL/gates/port_gate.py` into your fork as
@@ -171,6 +174,10 @@ agrees with it.
 ./env/bin/python3 -m pytest tests/test_yourmodel_fixtures.py -q
 ```
 
+The artifact path carries `$CARD` on purpose. The determinism arm deletes the artifact before each
+of its two runs, so two agents on two cards writing one `/tmp/fw.npy` delete each other's file
+between runs and produce a red that is nobody's bug. Any fixed path under `/tmp` has this problem.
+
 The determinism arm deletes the artifact first, so a run that exits 0 without writing it fails
 instead of passing on a stale file from yesterday. Do not add the fixture's `.meta.json` to that
 list: it records `runtime_s`, which is a measurement and differs run to run, so hashing it fails
@@ -194,8 +201,8 @@ same bits.
 ```bash
 TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_weights.py -q
 ./env/bin/python3 scripts/port_gate.py determinism \
-    --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/forward.py --len 64 --out /tmp/fw.npy' \
-    --artifact /tmp/fw.npy
+    --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/forward.py --len 64 --out scripts/yourmodel_port/fw_card${CARD}.npy' \
+    --artifact scripts/yourmodel_port/fw_card${CARD}.npy
 ```
 
 The weight test asserts set equality, `assert consumed == set(state_dict)`, not a loop over the names

@@ -57,7 +57,7 @@ That changes how long each phase takes. It does not change the order of the phas
 
 ```bash
 # $SKILL is the skill directory: an install, or your clone. See 01-orientation.md, "Your first hour".
-SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
 test -f "$SKILL/SKILL.md" || SKILL=/path/to/your/clone/skills/tt-bio-bringup
 
@@ -149,11 +149,11 @@ filled, no placeholders, nothing deferred.
 Then, before trusting it, make it fail. Blank one golden cell and confirm the gate notices:
 
 ```bash
-cp notes/PORT_PLAN.md /tmp/plan.bak
+cp notes/PORT_PLAN.md notes/PORT_PLAN.bak
 ./env/bin/python3 scripts/port_gate.py prove-red \
   --check         './env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md' \
   --break         "sed -i 's/\`embed.pt\`/ /' notes/PORT_PLAN.md" \
-  --restore       'cp /tmp/plan.bak notes/PORT_PLAN.md' \
+  --restore       'cp notes/PORT_PLAN.bak notes/PORT_PLAN.md' \
   --expect-change notes/PORT_PLAN.md
 ```
 
@@ -202,11 +202,22 @@ python3 scripts/port_gate.py determinism \
 ```
 
 ```
---- run 1: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out .../parity_artifacts
---- run 2: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out .../parity_artifacts
-  same     .../minifold_117.pt  53fe30714e9ae0f3  53fe30714e9ae0f3
+--- run 1: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
+captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
+blocks.0 kwargs captured: ['mask']
+blocks.0 mask is a tensor: True
+--- run 2: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
+captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
+blocks.0 kwargs captured: ['mask']
+blocks.0 mask is a tensor: True
+  same     scripts/minifold_port/parity_artifacts/minifold_117.pt  53fe30714e9ae0f3  53fe30714e9ae0f3
 GATE 0: 1 artifact(s) byte-identical across two runs.
 ```
+
+`$SKILL` has to be **exported**, not just assigned. `port_gate.py` runs `--run` through `bash -c`,
+which inherits exported variables only, so a plain `SKILL=...` gives you
+`python3: can't open file '/examples/minifold_capture.py'` and `GATE 2`. The block in Phase 0 above
+exports it.
 
 The gate deletes the artifact before each run, so a capture that exits 0 without writing anything
 fails instead of passing on yesterday's file. The digest itself is not a constant: it depends on your
@@ -217,7 +228,7 @@ two runs on one machine agree.
 which is what a rushed capture actually forgets:
 
 ```
-  DIFFERS  .../minifold_117.pt  d79bf518cb06ac83  f22e07595d839d6e
+  DIFFERS  scripts/minifold_port/parity_artifacts/minifold_117.pt  a026a45ffe346cbc  87f8e5cbe5636531
 GATE 1: 1 artifact(s) changed between two identical runs. Pin the seeds, the thread count and the
 iteration order before going on: a golden you cannot reproduce cannot prove anything later.
 ```
@@ -250,8 +261,8 @@ Weights loaded, one forward at L=64, allowed to be slow and allowed to be wrong.
 ```bash
 TT_VISIBLE_DEVICES=0 python3 -m pytest tests/test_minifold_weights.py -q
 python3 scripts/port_gate.py determinism \
-  --run 'TT_VISIBLE_DEVICES=0 python3 scripts/minifold_port/forward.py --len 64 --out /tmp/fw.npy' \
-  --artifact /tmp/fw.npy
+  --run 'TT_VISIBLE_DEVICES=0 python3 scripts/minifold_port/forward.py --len 64 --out scripts/minifold_port/fw_card0.npy' \
+  --artifact scripts/minifold_port/fw_card0.npy
 ```
 
 The weight test asserts a set equality in both directions, not a loop that checks each name it

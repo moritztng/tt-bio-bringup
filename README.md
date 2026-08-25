@@ -79,7 +79,7 @@ symlink and plain `find -type d` will not descend into one, and the result has t
 than read, because `find | head -1` exits 0 when it matched nothing.
 
 ```bash
-SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
 test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
     echo "NOT installed: nothing matched"; false; }

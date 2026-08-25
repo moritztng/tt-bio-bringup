@@ -227,15 +227,22 @@ write them. Everything else in this section you point at your own model.
 #    Warm >=1 iteration in-process first; report the second.
 #    -> WALL_MS
 
-# 2. Op count for ONE iteration, pip wheel, no Tracy needed.
-./env/bin/python3 scripts/profiling/graph_capture_probe.py --only overhead   # -> N_OPS
+# 2. Op count for ONE iteration, pip wheel, no Tracy needed. The probe prints `nodes=<N>`;
+#    capture it rather than reading it, because an unset N_OPS makes the budget below 0.
+N_OPS=$(./env/bin/python3 scripts/profiling/graph_capture_probe.py --only overhead \
+        | grep -oP 'nodes=\K[0-9]+')
+echo "N_OPS=${N_OPS:?probe printed no nodes= count; fix step 2 before profiling}"
 
 # 3. Device profile of that same single warm iteration.
 env -u LD_LIBRARY_PATH TT_METAL_HOME=$TT_METAL_HOME \
     PYTHONPATH=$TT_METAL_HOME/ttnn:$TT_METAL_HOME/tools:$TT_METAL_HOME \
-    ./env/bin/python3 -m tracy -r -o /tmp/prof --op-support-count $((N_OPS * 2)) \
+    ./env/bin/python3 -m tracy -r -o /tmp/prof --op-support-count $(( ${N_OPS:?} * 2 )) \
     -- /abs/path/to/profile_target.py
-grep -c "markers were dropped" /tmp/prof/*.log     # must be 0
+# Not `grep -c ... # must be 0`: grep exits 1 when the count is 0, so the good outcome is the
+# failing one, and with a glob -c prints file:count per file rather than one number.
+if grep -q "markers were dropped" /tmp/prof/*.log; then
+    echo "markers dropped: the trace is incomplete, raise --op-support-count and re-run"; false
+else echo "no dropped markers"; fi
 ```
 
 4. Aggregate the ops report with the snippet in §4. That is the census: op, ms, calls, %, µs/call.
