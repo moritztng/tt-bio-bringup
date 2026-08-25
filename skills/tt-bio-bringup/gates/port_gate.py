@@ -193,9 +193,11 @@ def _section(text: str, name: str) -> str | None:
     """The body of the ``## <name>`` section, up to the next heading of the same level."""
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        # Substring, matching how required headings are checked. "## Target hardware" must
-        # not satisfy the heading check and then silently skip this section's own checks.
-        if re.match(rf"#+\s*{re.escape(name)}\b", line.strip(), re.I):
+        # Substring, matching how required headings are checked at :138 exactly. Prefix matching
+        # was not enough: "## The Target" satisfies the heading check and missed this one, so the
+        # section's own checks vanished silently. Two matchers for one name have to agree.
+        stripped = line.strip()
+        if stripped.startswith("#") and name.lower() in stripped.lstrip("#").strip().lower():
             body = []
             for nxt in lines[i + 1:]:
                 if nxt.startswith("#" * line.count("#", 0, 6)) and nxt.lstrip("#").strip():
