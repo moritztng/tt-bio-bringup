@@ -303,22 +303,27 @@ distance is the module's envelope, and it replaces the Phase 0 guess. The recipe
 
 | Module | Autocast dtype | Envelope PCC | Maxdiff | Phase 0 guess | Gate becomes |
 |---|---|---|---|---|---|
-| `embed` | fp32, **skipped** | n/a | n/a | maxdiff 0 | 7.8e-03, measured with an explicit cast |
-| `blocks.0.norm1` | fp32, **skipped** | n/a | n/a | PCC >= 0.9999 | 1.4e-02, measured with an explicit cast |
-| `blocks.0.attn` | bf16 | 0.99998808 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.99998 |
-| `blocks.0.ffn` | bf16 | 0.99999052 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.99999 |
-| `blocks.0` | fp32, **skipped** | n/a | n/a | PCC >= 0.999 | 2.2e-02, measured with an explicit cast |
-| `head.proj` | bf16 | 0.99999577 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.99999 |
-| `head.out` | bf16 | 0.99999154 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.99999 |
-| `<root>` | bf16 | 0.99998522 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.99998 |
+| `embed` | fp32, **skipped** | 0.9999986744 | 7.779e-03 | maxdiff 0 | maxdiff <= 8e-03 |
+| `blocks.0.norm1` | fp32, **skipped** | 0.9999972248 | 1.306e-02 | PCC >= 0.9999 | maxdiff <= 1.4e-02 |
+| `blocks.0.attn` | bf16 | 0.9999880673 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.999988 |
+| `blocks.0.ffn` | bf16 | 0.9999902857 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.999990 |
+| `blocks.0` | fp32, **skipped** | 0.9999949972 | 2.183e-02 | PCC >= 0.999 | maxdiff <= 2.2e-02 |
+| `head.proj` | bf16 | 0.9999955072 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.999995 |
+| `head.out` | bf16 | 0.9999955371 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.999995 |
+| `<root>` | bf16 | 0.9999886189 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.999988 |
 
 **Three of eight rows came back fp32, and that is the finding.** `torch.autocast` keeps
 normalizations, softmax and a list of other ops in fp32, so for `embed`, `blocks.0.norm1` and
-`blocks.0` the instrument measured nothing and would have reported a perfect score: `exact=True`,
+`blocks.0` the instrument would have measured nothing and reported a perfect score: `exact=True`,
 `maxdiff 0.000e+00`. Reading that as "bf16-exact, gate it at maxdiff 0" sets a bar a correct device
 LayerNorm misses by 1.3e-02. **Check the output dtype before you believe the number.** Those three
-rows are measured with an explicit bf16 cast instead, which rounds the accumulation too and is
+rows are measured with the explicit bf16 cast instead, which rounds the accumulation too and is
 therefore an upper bound; the plan records that it is.
+
+**PCC in float64, not float32.** `blocks.0` at fp32 accumulation prints `1.0000000`, which is
+`1 - 2^-23` rounding to one, next to a maxdiff of 2.2e-02. The correlation of a residual that small
+against a signal that large is genuinely 0.99999500, and you cannot see the difference between
+"0.999995" and "1.0" in fp32. The `pcc()` above accumulates in double for that reason.
 
 The five rows autocast did cast tell the ordinary story: every Phase 0 guess was too loose, by about
 an order of magnitude each. The bars above are rounded down from the measured envelope for a PCC and
@@ -371,14 +376,14 @@ model against the whole reference.
 
 | Module | Threshold (measured bf16 envelope) | First attempt | After the fix | What it was |
 |---|---|---|---|---|
-| `embed` | maxdiff 0 | 0 | 0 | passed first time, it is a gather |
-| `blocks.0.norm1` | maxdiff 0 | 0 | 0 | no fix needed |
-| `blocks.0.ffn` | PCC >= 0.999991 | 0.9962 | 0.999993 | GELU: reference used exact, ttnn defaulted to tanh |
-| `blocks.0.attn` | PCC >= 0.999988 | 0.712 | 0.999990 | mask orientation, transposed |
-| `blocks.0` | maxdiff <= 6.0e-03 | 3.1e-03 | 3.1e-03 | no fix needed |
-| `head.proj` | PCC >= 0.999996 | 0.999997 | 0.999997 | no fix needed |
-| `head.out` | PCC >= 0.999992 | 0.999994 | 0.999994 | no fix needed |
-| `MiniFold` | PCC >= 0.999985 | 0.999987 | 0.999987 | no fix needed |
+| `embed` | maxdiff <= 8e-03 | 6.1e-03 | 6.1e-03 | passed first time, it is a gather |
+| `blocks.0.norm1` | maxdiff <= 1.4e-02 | 1.1e-02 | 1.1e-02 | no fix needed |
+| `blocks.0.ffn` | PCC >= 0.999990 | 0.9962 | 0.9999934 | GELU: reference used exact, ttnn defaulted to tanh |
+| `blocks.0.attn` | PCC >= 0.999988 | 0.712 | 0.9999901 | mask orientation, transposed |
+| `blocks.0` | maxdiff <= 2.2e-02 | 1.7e-02 | 1.7e-02 | no fix needed |
+| `head.proj` | PCC >= 0.999995 | 0.9999962 | 0.9999962 | no fix needed |
+| `head.out` | PCC >= 0.999995 | 0.9999958 | 0.9999958 | no fix needed |
+| `MiniFold` | PCC >= 0.999988 | 0.9999903 | 0.9999903 | no fix needed |
 
 Every threshold in that column is the **measured** envelope from Phase 1, not the Phase 0 guess.
 That is the substitution the last section argued for, so this table has to be the one that does it:
@@ -450,6 +455,18 @@ firing at another, every time, and timing is too noisy to notice a path that qui
 ### Phase 5: performance
 
 Census first, roofs second, prediction third, build fourth. *Every number illustrative.*
+
+Roofs first, because every "off the roof" figure below is relative to them and a census without them
+is a list of times. Measure them once per card, never quote a datasheet:
+
+| Roof | Method | Value |
+|---|---|---|
+| Peak matmul throughput | N=8192 square bf16 matmul, HiFi4 | 100.6 TFLOP/s |
+| DRAM bandwidth | 8192² bf16 `ttnn.add`, 402.7 MB/call | 435.2 GB/s |
+| Machine balance | 100.6e12 / 435.2e9 | 231 FLOP/byte |
+
+Those three come from `05-perf-method-and-roofline.md` §3, measured on a Blackhole p150a. Yours will
+differ; run the harness rather than copying them.
 
 | Op | Calls | Device time | Share of device | Share of wall | Bound by |
 |---|---|---|---|---|---|

@@ -286,11 +286,28 @@ plan's first-guess thresholds with, and it needs no device: the whole thing runs
 against the fixture you already captured.
 
 ```python
+def leaf(x):
+    """First tensor out of whatever the module returned. Bio modules return tuples and dicts."""
+    while isinstance(x, (tuple, list)):
+        x = x[0]
+    if isinstance(x, dict):
+        x = next(v for v in x.values() if torch.is_tensor(v))
+    return x
+
+def pcc(a, b):
+    """Pearson correlation in float64. fp32 accumulation returns 1.0 for a residual of 5e-3."""
+    a = a.flatten().double(); b = b.flatten().double()
+    return float(torch.corrcoef(torch.stack([a, b]))[0, 1])
+
 # Same module, same captured inputs, two torch precisions. No ttnn, no card.
 golden = torch.load(fixture, weights_only=False)
 args   = golden[f"{name}/args"]; kwargs = golden[f"{name}/kwargs"]
-ref32  = leaf(golden[f"{name}/out"])           # captured in fp32; leaf() unwraps tuples/dicts
+ref32  = leaf(golden[f"{name}/out"])           # captured in fp32
 
+mod.eval()                                     # NOT optional: a live Dropout makes the "envelope"
+                                               # a sample. On this repo's own toy model, skipping
+                                               # eval() gives maxdiff 2.8e-01 against a true
+                                               # 2.9e-03, a bar 96x too loose.
 with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
     out16 = mod(*args, **kwargs)
 ref16 = leaf(out16)

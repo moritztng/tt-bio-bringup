@@ -131,10 +131,21 @@ python3 scripts/port_gate.py prove-red \
 A gate you have not watched go red is not a gate. `prove-red` exists so that checking costs one
 command instead of a decision, which is the only reason it actually gets done.
 
-**Pass `--expect-change`.** A `sed -i` whose pattern no longer matches exits 0 having changed
-nothing, and that reads identically to a gate that is decoration. With the flag, `prove-red` compares
-the file's hash either side of the break and refuses instead of blaming your gate. It compares again
-after the restore, so a restore that exits 0 and leaves the tree dirty cannot print green.
+**`--expect-change` is required, not advised.** A `sed -i` whose pattern no longer matches exits 0
+having changed nothing, and that reads identically to a gate that is decoration. Without the flag the
+tool also happily certifies a check that only tests whether a file exists: `--check 'test -f model.py'`
+with `--break 'mv model.py model.bak'` looks exactly like a working gate and is the
+existence-checked-contents-depended-on failure this whole workflow is built against. So it refuses to
+run without it. With the flag it compares the file's hash either side of the break, refuses if nothing
+changed, refuses if the break deleted the file rather than editing it, and compares again after the
+restore so a restore that exits 0 and leaves the tree dirty cannot print green. If your break really
+does edit nothing on disk, pass `--no-expect-change` and say in the report why.
+
+**What it cannot check, so you have to.** `prove-red` sees exit codes and file hashes. It cannot tell
+whether the test you broke asserts anything about your model. A test whose body is `assert True`,
+broken to `assert False`, exits 1 and is scored as a genuine red. The tool proves the *plumbing*
+between a fault and a red light; only reading the assertion proves the test. When you write the
+report row, name the fault you injected and the number that moved, not just "yes".
 
 **Break the code, not the harness.** These all make a check exit non-zero without showing it can
 detect anything, and `prove-red` refuses each one rather than counting it as red:

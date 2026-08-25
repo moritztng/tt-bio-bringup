@@ -110,9 +110,7 @@ check "Phase 3 parity report, from the example's own tables" 0 "$TMP/parity.md" 
 {
     echo "# Performance report: minifold"
     echo; echo "## Measured roofs"; echo
-    echo "| Roof | Method | Value |"; echo "|---|---|---|"
-    echo "| Peak matmul throughput | N=8192 bf16 HiFi4 | 100.6 TFLOP/s |"
-    echo "| DRAM bandwidth | 8192^2 bf16 add | 435.2 GB/s |"
+    table "| Roof | Method | Value |"
     echo; echo "## Op census"; echo
     table "Share of wall"
     echo; echo "## Levers"; echo

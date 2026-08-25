@@ -36,8 +36,10 @@ sys.stdout.reconfigure(line_buffering=True)   # keep our labels interleaved with
 PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.\-]*>", re.I)
 #: Literal angle-bracket names the reference documents require, not slots to fill.
 LITERAL_ANGLE = {"<root>"}
-#: Prose words inside angle brackets mean it is a sentence, not an unfilled template slot.
-NOT_A_PLACEHOLDER = re.compile(r"\b(and|or|not|if|then|is|in|to|of|the)\b", re.I)
+#: Angle brackets holding a real clause, e.g. "<x> is <y>", are prose rather than a template slot.
+#: A stopword alone is not enough: "<url of the repo>" and "<hash of the checkpoint>" are exactly
+#: the holes this check exists to find, and every one of them contains "of" or "the".
+NOT_A_PLACEHOLDER = re.compile(r"\b(is|are|was|were|means|becomes|equals|if|then|when)\b", re.I)
 DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon"
                            r"|to be (decided|determined|measured|chosen|picked))\b", re.I)
 #: Softer phrasings. Only a hole when they are the *value* of something: in a prose paragraph
@@ -146,10 +148,22 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
     if not any(l.startswith("#") for l in prose.splitlines()):
         problems.append(f"{path} has no headings, so it is not the document this gate checks.")
 
-    headings = {h.strip("# ").strip().lower() for h in prose.splitlines() if h.startswith("#")}
+    headings = [h.strip("# ").strip().lower() for h in prose.splitlines() if h.startswith("#")]
+    claimed: set[int] = set()
     for want in required_headings:
-        if not any(want.lower() in h for h in headings):
-            problems.append(f"missing a heading containing {want!r}")
+        # A distinct heading per requirement. One line naming all ten sections used to satisfy
+        # all ten, after which _section() returned the whole document for each of them.
+        hit = next((i for i, h in enumerate(headings)
+                    if want.lower() in h and i not in claimed), None)
+        if hit is None:
+            if any(want.lower() in h for h in headings):
+                problems.append(f"{want!r} shares a heading with another required section. "
+                                "Each one needs its own heading, or the section checks below all "
+                                "read the same block of text.")
+            else:
+                problems.append(f"missing a heading containing {want!r}")
+        else:
+            claimed.add(hit)
 
     for n, line in enumerate(prose.splitlines(), 1):
         bare = strip_inline_code(line)
@@ -163,10 +177,20 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
         if m:
             problems.append(f"{path}:{n}: deferred entry {m.group(0)!r}, so this is not finished")
 
+    # Which section each line sits in, so a table can be judged by where it is and not only by
+    # what its columns are called.
+    section_of: dict[int, str] = {}
+    current = ""
+    for n, line in enumerate(prose.splitlines(), 1):
+        if line.startswith("#"):
+            current = line.strip("# ").strip().lower()
+        section_of[n] = current
+
     tables = parse_tables(prose)
     if require_tables and not tables:
         problems.append(f"{path}: no filled table anywhere, so nothing here is a record of anything")
     for t in tables:
+        in_controls_section = "negative control" in section_of.get(t.line_no, "")
         if not t.rows:
             problems.append(
                 f"{path}:{t.line_no}: table [{' | '.join(t.header)}] has no data rows. If it is "
@@ -202,7 +226,11 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" column answered "no" is the finding, not a filled cell.
-                if v and MUST_BE_YES.search(col) and (
+                # Keyed on the column name OR on being the last column of a negative-controls
+                # table, because renaming the column used to disable this check entirely.
+                is_verdict = MUST_BE_YES.search(col) or (
+                    in_controls_section and i == len(t.header) - 1)
+                if v and is_verdict and (
                         not AFFIRMATIVE.match(v) or NEGATED.search(v)):
                     problems.append(
                         f"{path}:{n}: {col!r} says {v!r}. This column records that the test FAILED "
@@ -480,6 +508,16 @@ CANNOT_RUN = {
 
 def gate_prove_red(args) -> int:
     watched = args.expect_change or []
+    if not watched and not args.no_expect_change:
+        print("GATE 2: pass --expect-change <the file the break edits>.")
+        print("  Without it this subcommand cannot tell a real injection from a break that did\n"
+              "  nothing, and it will certify a check that only tests whether a file exists:\n"
+              "    --check 'test -f model.py' --break 'mv model.py model.bak'\n"
+              "  reads exactly like a working gate. That is the vacuous check this tool exists to\n"
+              "  catch, so the flag is required rather than advised.")
+        print("  If your break genuinely edits nothing on disk (it flips an env var, say), pass\n"
+              "  --no-expect-change and say in the report why.")
+        return 2
     print(f"--- check, as it stands: {args.check}")
     before = _sh(args.check)
     if before != 0:
@@ -596,6 +634,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--check", required=True, metavar="CMD")
     p.add_argument("--break", required=True, metavar="CMD", dest="break")
     p.add_argument("--restore", required=True, metavar="CMD")
+    p.add_argument("--no-expect-change", action="store_true",
+                   help="the break edits nothing on disk, so skip the did-it-change check. Use "
+                        "only when that is true; without it --expect-change is required.")
     p.add_argument("--red-exit", type=int, metavar="N",
                    help="the exit code this check uses to report a defect, when it is not the "
                         "usual 1. Without it, an exit code that means 'could not run' (2-5, 126, "
