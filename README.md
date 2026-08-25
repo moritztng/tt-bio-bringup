@@ -15,6 +15,10 @@ skills/tt-bio-bringup/
   SKILL.md                  the workflow: 8 phases, each with a machine-checkable exit gate
   references/               14 reference documents, loaded on demand
   templates/                the documents the workflow expects you to keep
+  gates/port_gate.py        the gate checker the phases call, standard library only
+examples/
+  worked-example.md         one small model through every phase, with the gate output
+  minifold_capture.py       the Phase 1 golden capture, runnable with torch and no card
 agents/                     subagent definitions for five recurring roles
 scripts/redaction-check.sh  the check that keeps this repo publishable
 ```

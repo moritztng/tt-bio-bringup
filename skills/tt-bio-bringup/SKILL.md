@@ -93,7 +93,9 @@ domain and `prove-red` exists so that checking costs you one command.
 ### Phase 0 - Map the model (no device code)
 
 Read: `references/01-orientation.md`, and `references/02-parity-and-correctness.md` §1 for the
-fixture and threshold conventions the plan has to name.
+fixture and threshold conventions the plan has to name. `examples/worked-example.md` in the repository
+shows a filled-in plan for a small model, with the gate output, if you would rather see one than read
+about one.
 
 Produce `notes/PORT_PLAN.md` from `templates/PORT_PLAN.md`:
 
@@ -134,14 +136,19 @@ agrees with it.
 ```bash
 python3 scripts/port_gate.py determinism \
     --run 'python3 scripts/yourmodel_port/capture.py --len 117 --seed 0' \
-    --artifact scripts/yourmodel_port/parity_artifacts/blocks_117.pt \
-    --artifact scripts/yourmodel_port/parity_artifacts/blocks_117.meta.json
+    --artifact scripts/yourmodel_port/parity_artifacts/blocks_117.pt
 python3 -m pytest tests/test_yourmodel_fixtures.py -q
 ```
 
-The determinism arm deletes each artifact first, so a run that exits 0 without writing one fails
-instead of passing on a stale file. Prove the pytest arm red by corrupting one tensor inside a
-fixture: if it stays green it is checking the fixture's keys, not its contents.
+The determinism arm deletes the artifact first, so a run that exits 0 without writing it fails
+instead of passing on a stale file from yesterday. Do not add the fixture's `.meta.json` to that
+list: it records `runtime_s`, which is a measurement and differs run to run, so hashing it fails
+the gate for a reason that is not a defect. The metadata is checked for required keys by the pytest
+arm instead.
+
+Prove the pytest arm red by corrupting one tensor inside a fixture. If it stays green it is checking
+the fixture's keys, not its contents, which is the most common shape of a fixture test that proves
+nothing.
 
 ### Phase 2 - Skeleton on device
 
@@ -296,6 +303,7 @@ TT_VISIBLE_DEVICES=$CARD python3 scripts/perf_regression.py
 | Test suite and release gate design | `references/12-testing-and-gates.md` |
 | A specific symptom, indexed by how it looks | `references/13-failure-atlas.md` |
 | Running this as a months-long agentic campaign | `references/14-running-a-long-campaign.md` |
+| One small model taken through every phase, filled in | `examples/worked-example.md` in the repository |
 
 When something breaks, go to `13-failure-atlas.md` first. It is indexed by symptom in the words you
 would use, and most of what will happen to you is already in it.

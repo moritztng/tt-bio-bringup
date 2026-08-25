@@ -9,6 +9,19 @@ trace. Where two mechanisms produce the same symptom, both are listed, cheapest 
 **Read this when** a port is producing wrong numbers, hanging, running slow, or measuring
 differently than it did an hour ago, and you do not yet have a hypothesis worth spending a card on.
 
+| Your symptom | Section | If it is not in there |
+|---|---|---|
+| Output is badly wrong: garbage, NaN, PCC under 0.9 | §1 | `02-parity-and-correctness.md`, find the first diverging tensor |
+| Output is nearly right and will not close the last bit | §2 | `03-precision-and-numerics.md` |
+| Wrong at some lengths, right at others | §3 | `04-shapes-tiles-and-bucketing.md` |
+| Same input, same seed, different answer | §4 | §4 covers the card-fault case too |
+| Hangs at 0% CPU, or crashes on start | §5 | `09-devices-and-hardware-operations.md` |
+| Correct but slow | §6 | `05-perf-method-and-roofline.md` before you touch anything |
+| The number will not reproduce, or moved on its own | §7 | `06-profiling-instruments.md`, the instrument is lying |
+| The gate is green and the model is visibly broken | §8 | `12-testing-and-gates.md` |
+| It worked yesterday and the tree looks the same | §9 | |
+| Out of memory | §5 | `08-memory-and-residency.md` |
+
 Sibling docs: `05-perf-method-and-roofline.md` (how to measure before you optimise),
 `12-testing-and-gates.md` (the full gate-failure catalogue),
 `02-parity-and-correctness.md` and `03-precision-and-numerics.md` (parity protocol and bf16 policy).

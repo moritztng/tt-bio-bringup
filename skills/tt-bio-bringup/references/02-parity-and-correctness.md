@@ -133,6 +133,11 @@ Storage: small JSON scores and provenance in git; multi-MB binaries (CIFs, MSAs,
 release assets fetched by a script, with the binary directory gitignored. Fixture sets are append-only, so git
 LFS quotas bite and release assets do not.
 
+**The metadata is not part of the byte-identity check.** `runtime_s` is a wall-clock measurement and
+`date` is a date, so two correct captures produce two different meta files. Hash the golden; check the
+metadata for required keys and for the tautology tells above. A determinism gate that hashes the meta
+file alarms on a loaded host and teaches the reader to ignore it.
+
 ## 2. Component-by-component porting
 
 Never port the whole model then debug end to end. Order: **leaf ops** the shared library lacks (RoPE, a fused
