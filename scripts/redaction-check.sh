@@ -161,7 +161,14 @@ for entry in "${PATTERNS[@]}"; do
   # any pattern anchored at ^ could never survive the second pass: "^rack[0-9]" loaded, validated,
   # was counted in the summary, and could not fire. Blanking first removes the second pass.
   hits=$( { while IFS= read -r -d "" f; do
-              case $f in ./scripts/redaction-check.sh|scripts/redaction-check.sh) continue;; esac
+              # This file holds the patterns, so scanning it against them is all false positives.
+              # It is still a published file, and a hostname typed into it shipped unseen. So it
+              # is exempt from the BUILT-IN patterns only: the local denylist, which is the org's
+              # own hostnames and staff names, is applied to it like any other file.
+              case $f in
+                ./scripts/redaction-check.sh|scripts/redaction-check.sh)
+                  [ "$label" = "local denylist" ] || continue ;;
+              esac
               if [ ! -r "$f" ]; then
                 printf 'UNREADABLE: %s\n' "$f"; continue
               fi

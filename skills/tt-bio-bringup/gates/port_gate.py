@@ -122,12 +122,21 @@ VERDICT_WORD_OK = re.compile(
     r"pcc|maxdiff|rmsd|mae|diff|delta|tol|atol|rtol|sigma|abs|rel|exit|code|"
     r"at|to|from|on|in|for|of|vs|both|all|each|and|then|now|commit|seed|seeds|"
     r"step|steps|row|rows|test|tests|case|cases|run|runs|"
-    r"went|fell|drop(?:ped|s)?|rose|jumped|nan|inf"
+    r"went|fell|drop(?:ped|s)?|rose|jumped|nan|inf|"
+    r"a|ang|angstrom|nm|deg|ms|us|ns|s|kb|mb|gb|bits?|bytes?|ulp"
     r")$", re.I)
+#: Zero means "no difference" for these and nothing of the kind for pcc, a seed or a step index.
+DIFFERENCE_METRIC = {"maxdiff", "diff", "delta", "rmsd", "mae", "abs", "rel", "tol", "atol",
+                     "rtol", "exit", "code"}
+#: One means "the two sides agree" for these.
+AGREEMENT_METRIC = {"pcc"}
 #: A test id, a path or a symbol. Naming the test that went red is detail worth having, and an
 #: identifier is distinguishable from prose: it carries an underscore, a separator or a file
 #: extension, which "injected", "skipped" and "needed" do not.
-VERDICT_CODE_OK = re.compile(r"[_/]|::|\.(?:py|pt|pth|json|npz|npy|md|sh|cpp|h)$|^`.+`$", re.I)
+#: A bare underscore is not enough: "no_fault_injected" and "exit_code_0" are prose wearing an
+#: identifier's coat, and they passed. An identifier needs a separator prose does not use.
+VERDICT_CODE_OK = re.compile(r"[/]|::|\.(?:py|pt|pth|json|npz|npy|md|sh|cpp|h)$|^`.+`$"
+                             r"|^\w+(?:\.\w+){1,}$", re.I)
 #: A number, a scientific-notation number, a percentage, or a commit-shaped hash.
 VERDICT_NUM_OK = re.compile(r"^(?:[0-9][0-9a-fx.eE+_-]*%?|[0-9a-f]{6,}|[<>=~+-]|%)$", re.I)
 #: Naming the transition is the most informative thing a verdict can do, so "green -> red" and
@@ -147,22 +156,31 @@ def verdict_problem(cell: str) -> str | None:
         return ("does not start with an affirmative. This column records that the test FAILED "
                 "when you broke it, so it has to start with yes, red, true or confirmed.")
     rest = AFFIRMATIVE.sub("", cell, count=1)
-    nums = []
+    nums: list[tuple[str | None, float]] = []
+    prev: str | None = None
     for tok in re.split(r"[\s,;:()\[\]/]+|->|\u2192", rest):
         tok = tok.strip(".!\u2013\u2014")
         if not tok:
             continue
         # Classify before measuring. Scanning the whole cell for digits read the 0 out of
         # `blocks.0.ffn` and called the verdict a zero.
-        if VERDICT_CODE_OK.search(tok):
-            continue
         if VERDICT_NUM_OK.match(tok):
             try:
-                nums.append(float(tok.rstrip("%")))
+                nums.append((prev, float(tok.rstrip("%"))))
             except ValueError:
-                pass
+                try:
+                    # 0x0 is a zero. Swallowing the parse failure let it through the rule below.
+                    nums.append((prev, float(int(tok, 0))))
+                except ValueError:
+                    pass
+            prev = tok
+            continue
+        # After the number test, or "1.0" reads as a dotted identifier and never reaches the
+        # rules below. Only a token that is not a number can be a path.
+        if VERDICT_CODE_OK.search(tok):
             continue
         if VERDICT_WORD_OK.match(tok):
+            prev = tok
             continue
         return (f"contains {tok!r}. Past the affirmative this column takes numbers and words that "
                 "measure or name the transition (pcc, maxdiff, red, green -> red, at, commit). "
@@ -173,17 +191,22 @@ def verdict_problem(cell: str) -> str | None:
                  r"\b(?:red|fail(?:s|ed|ing|ure)?)\b", rest, re.I):
         return ("names the same state on both sides of the transition, so nothing moved. A control "
                 "that was already red before the break proves nothing about the break.")
-    # A number is only evidence if it moved. "yes, maxdiff 0" says the injected fault changed
-    # nothing, "yes, exit code 0" says the check passed, and "yes, pcc 1.0" says the two sides are
-    # identical: each is the control NOT firing, spelled with a digit. The previous version
-    # accepted all of them, and "y, 0" as well, because a digit matched the number token.
-    if any(n == 0.0 for n in nums):
-        return ("names a zero. A zero difference, a zero exit code and a zero count are the "
-                "control NOT firing: they say the injected fault changed nothing. Record the "
-                "value the broken run actually produced.")
-    if re.search(r"\bpcc\b", rest, re.I) and any(n == 1.0 for n in nums):
-        return ("says the PCC is 1. That is the two sides agreeing, which is what a control that "
-                "did not fire looks like. Record the PCC the broken run produced.")
+    # A number is only evidence if it moved, but only for metrics where zero means "no
+    # difference". A blanket zero rule condemned "yes, pcc 0.0", which is MAXIMAL divergence and
+    # the loudest possible red, and "yes, red at seed 0", where the 0 is an index. Which it is
+    # depends on the word in front of it.
+    for prev, n in nums:
+        word = (prev or "").lower()
+        if n == 0.0 and word in DIFFERENCE_METRIC:
+            return (f"says {word} is zero, which is the two sides agreeing: the injected fault "
+                    "changed nothing. Record the value the broken run actually produced.")
+        if n == 0.0 and prev is None and len(nums) == 1:
+            return ("is an affirmative and a bare zero, which names no movement at all. Say what "
+                    "the broken run produced, or leave the number out.")
+        if n == 1.0 and word in AGREEMENT_METRIC:
+            return (f"says {word} is 1, which is the two sides agreeing, and that is what a "
+                    "control that did not fire looks like. Record the value the broken run "
+                    "produced.")
     g, r = GREENISH.search(rest), REDDISH.search(rest)
     if g and not (r and r.start() > g.start()):
         return ("names a green or passing state with no red one after it. A control that did not "
@@ -896,7 +919,11 @@ def gate_prove_red(args) -> int:
                   + (f", {', '.join(dirty)} still differs" if dirty else "")
                   + "). Check it by hand before running anything else.")
         else:
-            print("  the tree is back as it was.")
+            # "the tree" overclaimed: this only ever compared the files passed to --expect-change,
+            # and the refusal directly above fires precisely because an UNDECLARED file moved. It
+            # printed "the tree is back as it was" over a file it had not looked at.
+            print("  the files you declared are back as they were." if watched else
+                  "  the restore ran; nothing was declared, so there is nothing to compare.")
         return 2
 
     print(f"--- break it: {getattr(args, 'break')}")
@@ -939,12 +966,13 @@ def gate_prove_red(args) -> int:
         if moved:
             print(f"GATE 2: the break changed {', '.join(moved)}, which your check reads, and you did "
                   "not list it in --expect-change.")
-            print("  Either that is the file you meant to break, in which case declare it and the\n"
-                  "  deleted-rather-than-edited guard applies to it, or the break is touching\n"
-                  "  something it should not and the red you are about to see is not the red you\n"
-                  "  think it is.")
-            _sh(args.restore)
-            return 2
+            # Through _bail, not a bare _sh: every other refusal past the injection reports
+            # whether the restore actually worked, and this one exited 2 saying nothing, so it
+            # could leave the fault in the tree while claiming to have put it back.
+            return _bail("  Either that is the file you meant to break, in which case declare it "
+                         "and the\n  deleted-rather-than-edited guard applies to it, or the break "
+                         "is touching\n  something it should not and the red you are about to see "
+                         "is not the red you\n  think it is.")
 
         print(f"--- check, with the fault injected: {args.check}")
         broken = _sh(args.check)

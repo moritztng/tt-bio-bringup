@@ -326,13 +326,21 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_p
 ```
 
 The report arm is why the parity template has a negative-controls table. The "Went red?" column is
-checked as a **closed field**, not read as English. It must be under 40 characters, start with an
-affirmative (`yes`, `red`, `true`, `confirmed`, `went red`), and past that hold only three kinds of
-token: a number, a word that measures or names the transition (`pcc`, `maxdiff`, `red`, `green`,
-`at`, `to`, `from`, `in`, `vs`, `fell`, `dropped`), or an identifier (`test_ffn.py`, `blocks.0.ffn`,
-a commit hash). Two shapes are rejected even though every token is legal: a green or passing state
-with no red one after it (`red -> red` says nothing moved), and a zero (`maxdiff 0`, `exit code 0`,
-`pcc 1.0` all say the injected fault changed nothing).
+checked as a **closed field**, not read as English. It must be 40 characters or fewer, start with
+an affirmative (`yes`, `red`, `true`, `confirmed`, `went red`, `✓`), and past that hold only three
+kinds of token: a number with an optional unit, a word that measures or names the transition
+(`pcc`, `maxdiff`, `rmsd`, `red`, `green`, `at`, `to`, `from`, `in`, `vs`, `for`, `fell`,
+`dropped`, `seed`, `step`, `run`), or an identifier, which means a dotted path (`blocks.0.ffn`), a
+path or a `::` test id, a known file extension (`test_ffn.py`), or anything you wrap in backticks.
+A bare `snake_case` word is not an identifier: `no_fault_injected` is prose in an identifier's coat.
+
+Three shapes are rejected although every token in them is legal:
+
+- a green or passing state with no red one after it (`yes, still green`)
+- the same state on both sides of a transition (`yes, red -> red`: nothing moved)
+- a difference metric that is zero, or a PCC of 1 (`maxdiff 0`, `exit code 0`, `pcc 1.0` all say
+  the injected fault changed nothing). Zero is only suspect where zero means "no difference":
+  `pcc 0.0` is maximal divergence and passes, and so does an index like `red at seed 0`.
 
 So `yes`, `yes - red at 0.712`, `yes, green -> red`, `yes, red in test_ffn.py` and
 `confirmed, PCC fell to 0.31` are answers. `pass`, `green`, `not yet`, `red herring, no`,
