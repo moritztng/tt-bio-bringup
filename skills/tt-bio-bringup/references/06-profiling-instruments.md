@@ -212,8 +212,9 @@ owned by the replay: return a copy.
 
 Produces one op census table and one residual line. Roughly 30 minutes on a warm machine.
 
-Steps 0 and 2 use two small harnesses worth committing once under `scripts/profiling/` and reusing
-for every model: a roofline microbenchmark and a graph-capture op counter.
+Steps 0 and 2 use two harnesses that come with tt-bio, `scripts/profiling/roofline_bh.py` and
+`scripts/profiling/graph_capture_probe.py`. They are model-agnostic, so you run them, you do not
+write them. Everything else in this section you point at your own model.
 
 ```sh
 # 0. Roofs, once per card. Numbers below are Blackhole p150a, measured, for calibration only.

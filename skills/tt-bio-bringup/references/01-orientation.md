@@ -61,24 +61,99 @@ matters more than usual as a result:
 
 See `11-tt-bio-integration.md` for the file-by-file conventions.
 
+## Day zero: getting to the starting line
+
+Nothing below is Tenstorrent-specific expertise. It is the install, and it has to work before any of
+the rest of this skill means anything.
+
+**1. Fork and clone tt-bio.** Fork `https://github.com/moritztng/tt-bio` on GitHub, then:
+
+```bash
+git clone https://github.com/<you>/tt-bio.git
+cd tt-bio
+git remote add upstream https://github.com/moritztng/tt-bio.git
+```
+
+The `upstream` remote is how you rebase later, and adding it now costs nothing.
+
+**2. Build the environment.** Python 3.10 or 3.12; 3.11 is not supported:
+
+```bash
+python3.10 -m venv env
+source env/bin/activate
+pip install -e '.[tenstorrent]'
+tt-bio install-deps        # Tenstorrent system dependencies for this release; may ask for sudo
+tt-bio --help              # if this prints the CLI, the install took
+```
+
+Every command in this skill assumes that `env` is active. Activate it in every new shell, and when
+you write a script or a gate that runs as a subprocess, give it the interpreter explicitly
+(`./env/bin/python3`) rather than relying on the ambient `python3`. A gate that silently ran under the
+system interpreter is a real and recurring way to spend a day.
+
+**3. Check the cards answer.**
+
+```bash
+tt-smi -ls
+```
+
+It lists every board on the host with its chip generation and its `/dev/tenstorrent/<n>` number. Write
+the chip generation and the count into `notes/PORT_STATE.md`. Every performance claim you make from
+here on has to name that hardware, because Wormhole and Blackhole numbers are not comparable.
+
+The logical IDs `tt-smi` shows and the `/dev/tenstorrent/<n>` node numbers are not always the same
+number, and `TT_VISIBLE_DEVICES` takes the node number. Read both columns before pinning a card.
+
+**4. Run the existing suite, before you change anything.**
+
+```bash
+TT_VISIBLE_DEVICES=0 python3 -m pytest tests -q          # pick a card that -ls listed
+```
+
+`TT_VISIBLE_DEVICES` is mandatory on a host with cards. Unpinned, pytest refuses the session on
+purpose: ttnn brings up every chip it can see, not just the one it computes on, so an unpinned run
+takes every card on the box away from whoever else is using it. `TT_VISIBLE_DEVICES=` (set, empty) is
+the other legal answer and means "skip the device tests, run everything else".
+
+Record the pass, fail and skip counts. That is your baseline. Without it you will spend a day
+debugging a failure that was already there before you arrived.
+
+**5. Fold one existing model, end to end.**
+
+```bash
+printf '>t\nMKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ\n' > /tmp/t.fasta
+TT_VISIBLE_DEVICES=0 tt-bio predict /tmp/t.fasta --model esmfold2-fast
+```
+
+This proves the install, the driver, the card and the weights download, all at once, before your own
+code can be blamed for any of it. `esmfold2-fast` on purpose: it needs no MSA, so nothing here depends
+on reaching an MSA server. The first run downloads a checkpoint, so it is slow once and fast after. If
+this fails, stop here: nothing downstream is interpretable.
+
+**6. Pin your own reference.** Clone your PyTorch reference implementation, pin the commit, build it
+its own separate virtualenv, and run it once on CPU. Record the exact command and the wall-clock
+runtime. Two runs must produce identical output; if they do not, fix that before Phase 1, because a
+reference you cannot reproduce cannot be a golden.
+
+If steps 3 to 5 all pass, you are at the starting line.
+
 ## Your first hour
 
-Do these in order. Every step produces something checked into your fork.
+Phase 0 of `SKILL.md`. Copy the templates in, write the plan, and run the gate on it:
 
-1. **Confirm the hardware answers.** Run the device tool, list the cards, note the chip generation
-   and how many you have. Write it in `PORT_STATE.md`. Every performance claim you make later must
-   name this hardware.
-2. **Run the existing test suite** in your fresh fork, on the machine you will work on. Note how
-   many pass, fail and skip before you have changed anything. That is your baseline, and without it
-   you will spend a day debugging a failure that was already there.
-3. **Run one existing model end to end** on a small input. This proves your install, your driver,
-   your card and your environment, all at once, before your own code can be blamed.
-4. **Pin your reference.** Clone the PyTorch reference implementation, pin the commit, create a
-   virtualenv for it, and run it once on CPU. Record the exact command and the runtime.
-5. **Write `PORT_PLAN.md`.** The module tree, the axes, the op inventory, the risk register. Phase 0
-   of `SKILL.md` says exactly what goes in it.
+```bash
+SKILL=$(find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d \
+        -name 'tt-bio-bringup' -path '*skills*' 2>/dev/null | head -1)
+mkdir -p notes scripts
+cp "$SKILL/templates/PORT_PLAN.md" "$SKILL/templates/PORT_STATE.md" notes/
+cp "$SKILL/gates/port_gate.py" scripts/
+sed -i '/^\/notes\/$/d' .gitignore        # your fork keeps its planning; upstream's does not
 
-If step 2 or 3 fails, stop and fix that. Nothing downstream is interpretable until they pass.
+python3 scripts/port_gate.py plan notes/PORT_PLAN.md      # red now, and it says why
+```
+
+Then fill `notes/PORT_PLAN.md` in until that command exits 0. It will not exit 0 while any module
+lacks a named golden, which is the one thing Phase 0 exists to force.
 
 ## The vocabulary you will see in the reference docs
 

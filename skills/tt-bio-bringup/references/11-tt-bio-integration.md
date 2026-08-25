@@ -94,6 +94,27 @@ do not open a device yourself.
 - Nonzero exit when a job fails, and per-stage progress events through the shared progress helper so
   the Rich display and `--debug --log` look identical to every other model.
 
+**If your model is not a structure predictor,** the contract above is the wrong one and the CLI
+already has the right one. Register under the tuple that matches what your model returns, and inherit
+that verb's contract rather than bending `predict` around it:
+
+| Your model returns | Register in | Verb | Output contract you inherit |
+|---|---|---|---|
+| a structure | `PREDICT_MODELS` (via `_MODEL_RESULTS_PREFIX`) | `predict` | structure file in `--output_format`, plus a confidence summary JSON |
+| per-token or per-sequence embeddings | `EMBED_MODELS` | `embed` | one array per input, plus the shape and dtype in the summary |
+| a scalar, or a small vector of scalars | `AFFINITY_MODELS` | `affinity` | one JSON record per input, the value plus its inputs |
+| a designed sequence or backbone | `DESIGN_MODELS` | `design` | the designed artifact plus the per-design metrics |
+
+The parts that do not change with the verb: `predict_results_dir_name(model, stem)` for the output
+directory, the shared writer, the shared progress reporter, nonzero exit on failure, and
+`--accelerator / --cache / --seed / --fast / --debug / --devices`. The parts that do: the flags in the
+list above that name a diffusion or recycling loop mean nothing to an embedder, and adding them to one
+is how a flag ends up documented and ignored.
+
+Whichever verb you land under, the Phase 0 module tree and the axis table are the same exercise. An
+embedder has a token axis and a layer axis instead of a pair axis and an atom axis, and the tiling
+arithmetic is identical.
+
 **A per-model default is a table row, not a branch.** If your inference default differs (sampling-step
 count, MSA on or off), put it in the existing per-model resolution function or membership tuple with
 a one-sentence reason, beside the other models' values. `if model == "yourmodel"` scattered through
@@ -221,6 +242,31 @@ that hosts a kernel defines its own, `KERNEL_DIR = Path(__file__).resolve().pare
 `compute_*.cpp` and `reader_*.cpp` / `writer_*.cpp` side by side; one splits into `compute/` and
 `dataflow/` subdirectories. Either shape is fine, and section 9's globs are recursive so both are
 covered. A new kernel directory is a packaging event: see section 9.
+
+## 6a. What you inherit and what you write
+
+The cold-read failure this table prevents: a reader sees ten script names across these documents,
+cannot tell which already exist, and budgets for writing all ten.
+
+| Comes with tt-bio, you extend it | You write it, for your model |
+|---|---|
+| `scripts/release_gate.py`, the task-metric gate | `scripts/yourmodel_port/capture.py`, golden capture |
+| `scripts/full_parity_gate.py`, end-to-end parity legs | `scripts/yourmodel_port/parity_gate.py`, your legs |
+| `scripts/perf_regression.py` + `docs/perf_baselines.json` | `scripts/yourmodel_port/bench.py`, your benchmark driver |
+| `scripts/packaging_smoke.py`, wheel and sdist contents | `scripts/yourmodel_port/bisect.py`, when a module diverges |
+| `scripts/integration_envelope.py`, `scripts/lever_census.py` | `tt_bio/yourmodel_*.py`, the port itself |
+| `scripts/profiling/roofline_bh.py`, measured roofs | `tests/test_yourmodel_*.py`, your tests |
+| `scripts/profiling/graph_capture_probe.py`, op counts | `docs/yourmodel-parity.md`, `docs/yourmodel-perf.md` |
+| `tests/_port_module.py`, importing a port harness | |
+| `tests/conftest.py`, the `device` marker and its fixtures | |
+| `tests/test_perf_model_coverage.py`, `tests/test_repo_root_clean.py` | |
+
+Extending one on the left means adding a row to a table or a dict inside it. If you find yourself
+copying one to `scripts/yourmodel_gate.py`, stop: that is section 5's rule being broken, and the copy
+is the one that will not get the next fix.
+
+`scripts/port_gate.py` is the exception to both columns. It comes from the tt-bio-bringup skill, not
+from tt-bio, and you copy it in once and leave it alone.
 
 ## 7. Tests
 

@@ -2,52 +2,63 @@
 
 This document decides your operating model: split the port into units of work that each carry a
 written brief and one machine-checkable done-condition, prove that done-check goes red before you
-trust it green, keep all continuity in the repository because every agent session starts amnesiac,
-isolate concurrent agents in their own worktree with an exclusive lease on one card, let agents push
-branches while exactly one owner merges, and verify every claim against live state as you make it.
+trust it green, keep all continuity in the repository because every session starts amnesiac, isolate
+concurrent agents in their own worktree with an exclusive lease on one card, let agents push branches
+while exactly one person merges, and verify every claim against live state as you make it.
 
 Read this when a port is going to take more than a week, when you are about to run more than one
 Claude Code session at a time, or when a session reported something done and it was not.
+
+**What this assumes you have: Claude Code, git, and one card.** No dispatcher, no queue, no
+orchestration service. A unit of work is a markdown file plus a branch, you start each session
+yourself, and the done-check is a command you run in your own shell. Everything below works that way
+on purpose. If you later build automation around it, the primitives do not change.
 
 ---
 
 ## 1. The unit of work is a written brief
 
-One file per unit of work, written before the session starts, and re-read by every relaunch of that
-unit. Six fields, all mandatory:
+One file per unit of work, `notes/briefs/<slug>.md`, written before the session starts and re-read at
+the top of every session that continues it. `templates/work-brief.md` is the form; every heading in it
+is load-bearing:
 
-| Field | Content | Failure if missing |
+| Heading | Content | Failure if it is missing |
 |---|---|---|
-| `GOAL` | one sentence, one outcome | the session invents scope |
-| `DONE_CHECK` | one shell command, exits 0 only when the deliverable exists and is correct | the task is declared done while unfinished |
-| `COMMANDS` | the exact invocations, with the venv and env vars | each relaunch re-derives them and gets them slightly different |
-| `IN SCOPE` | the files it may edit | edits spray across the tree and become unmergeable |
-| `OUT OF SCOPE` | what it must not touch, named | "while I was there I also refactored" |
-| `STATE_DOC` | the path it appends its findings to | pass N+1 starts from zero |
+| Goal | one sentence, one outcome | the session invents scope |
+| Definition of done | one shell command, exits 0 only when the deliverable exists and is correct | the work gets called done while unfinished |
+| In scope | the files it may edit | edits spray across the tree and become unmergeable |
+| Out of scope | what it must not touch, named | "while I was there I also refactored" |
+| Commands to run | the exact invocations, with the interpreter and the env vars | each session re-derives them and gets them slightly different |
+| Context the agent will not otherwise have | prior attempts, known traps, why the obvious approach was rejected | the same dead end gets walked twice |
+| Hardware | which card, and the lease | two sessions on one card, reported as nondeterminism |
+| When blocked | what to escalate and what to do meanwhile | the session either stalls or improvises |
+| Report back | where the state doc is, what must be written before finishing | the next session starts from zero |
 
-The brief is agent-facing. Precision beats prose. A unit with no `DONE_CHECK` is not a task, it is a
-wish, and it will come back reported complete.
+The brief is agent-facing. Precision beats prose. A unit with no definition-of-done command is not a
+task, it is a wish, and it will come back reported complete.
 
 **Never write "merge to main" as an action in a brief**, not even conditionally. Write "report
-`VERDICT: <result>`" instead. A task-specific instruction overrides your standing system prompt every
-time: three briefs in one campaign said "if X, merge to main", all three agents did, bypassing the
-preflight. Two were safe only because nothing raced them.
+`VERDICT: <result>`" instead, and merge it yourself after checking. A task-specific instruction
+overrides a standing rule every time: three briefs in one campaign said "if X, merge to main", all
+three sessions did, bypassing the preflight. Two were safe only because nothing raced them.
 
 ---
 
 ## 2. The done-check is the primitive
 
-A done-check is a command, run by something other than the agent that did the work, exiting 0 only
-when the artifact genuinely exists and is correct. Everything else here is scaffolding around it.
+A done-check is a command, run by someone other than the agent that did the work, exiting 0 only when
+the artifact genuinely exists and is correct. Everything else here is scaffolding around it. You are
+the one who runs it: paste it into a fresh shell in your own checkout, after the session says it is
+finished, before you believe it.
 
 Grep for the *shape of a result*, never for a topic keyword:
 
 ```bash
-# BAD: a session that writes "I did not get to the A/B this pass, here's why" satisfies this
-DONE_CHECK: grep -qiE "parity|A/B|PCC" notes/state-<slug>.md
+# BAD: a session that writes "I did not get to the A/B, here's why" satisfies this
+grep -qiE "parity|A/B|PCC" notes/state-<slug>.md
 
-# GOOD: only a table with real numbers in it can produce this line
-DONE_CHECK: grep -qE '^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}' notes/state-<slug>.md
+# GOOD: only a line carrying a real measured number can produce this
+grep -qE '^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}' notes/state-<slug>.md
 ```
 
 ### Seven ways a done-check lies, and the fix for each
@@ -56,11 +67,11 @@ DONE_CHECK: grep -qE '^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}' notes/state-<slug
 |---|---|---|---|
 | 1 | Keyword grep on prose | A multi-stage task discusses stage 2 in prose while only running stage 1. Keyword presence cannot distinguish "here is the table" from "here is why I skipped it". | Grep for a labelled number or a table header that only exists once real data lands. |
 | 2 | Greps for a name, not a verdict | `grep -q "fused_trimul" report.md` passes when the report says the op was *considered*. | Grep for the decision: `^VERDICT: (GO\|NO-GO)`, plus the measurement that decided it. |
-| 3 | Hardcoded path | The check is authored inside the agent's worktree and hardcodes it. Re-run from the merge owner's checkout, the path does not exist, exit 1, reads exactly like a missing deliverable. | Derive the root from the script's own location or one env var. Accept several candidates and pass if any hit. |
-| 4 | Reads a mirrored copy | The check reads a state file that a sync process copies between machines. The copy resolves, is non-empty, and is stale, so `test -s` passes and only the verdict grep fails. Silent, indistinguishable from unfinished. | Check the file the writer actually wrote, or make the writer push before it exits. Before treating a red check as real, `diff` the file across every copy. |
-| 5 | Prose in a command field | `DONE_CHECK: declared in the state doc by the convention this port already uses` is executed verbatim: `bash: declared: command not found`, exit 127. | Every done-check must be one physical unwrapped line starting with a real command name (`grep`, `test`, `python3`). When copying one forward from a prior pass, copy the literal command and edit only the marker string. |
-| 6 | Inverted exit status | `grep -L PAT FILE && echo OK` fires when the pattern **is** present. It can never be satisfied by a correct file, so repeated "fixes" look like a flaky test rather than a backwards one. | For absence, write `! grep -q PAT FILE`. |
-| 7 | Depends on reachability | The check runs over ssh to one machine, or curls a service. That machine goes down and the check fails forever, blocking conclusion of finished, verified work. | Make the check local to wherever it runs. If it must be remote, bound it (`timeout 30 ssh -o BatchMode=yes ...`) and distinguish exit 255 (transport) from exit 1 (deliverable missing). |
+| 3 | Hardcoded path | The check is written inside the agent's worktree and hardcodes it. Re-run from your own checkout the path does not exist, exit 1, which reads exactly like a missing deliverable. | Derive the root from the script's own location or one env var. Accept several candidates and pass if any hit. |
+| 4 | Reads a stale copy | The check reads a file that exists in two places, and resolves the one nobody wrote. It is non-empty, so `test -s` passes and only the content grep fails. Indistinguishable from unfinished. | Check the file the writer actually wrote. Before treating a red check as real, confirm you are reading the same path the session wrote. |
+| 5 | Prose where a command belongs | "done when the verdict is declared in the state doc by the usual convention" is not runnable. Pasted into a shell it is `bash: declared: command not found`, exit 127, which reads as a failure rather than as a check that was never written. | One physical unwrapped line starting with a real command name (`grep`, `test`, `python3`). Copying one forward, copy the literal command and edit only the marker string. |
+| 6 | Inverted exit status | `grep -L PAT FILE && echo OK` fires when the pattern **is** present. It can never be satisfied by a correct file, so repeated "fixes" look like a flaky test rather than a backwards check. | For absence, write `! grep -q PAT FILE`. |
+| 7 | Depends on reachability | The check ssh'es to a machine or curls a service. That goes down and the check fails forever, blocking finished, verified work. | Keep it local. If it must be remote, bound it (`timeout 30 ssh -o BatchMode=yes ...`) and distinguish exit 255 (transport) from exit 1 (deliverable missing). |
 
 ### The universal remedy: prove it red first
 
@@ -73,15 +84,17 @@ mv /tmp/state-x.md notes/  && bash -c "$CHK"; echo "intact -> $?"  # MUST be 0
 ```
 
 Run it through a fresh `bash -c`, not your interactive prompt: an interactive shell often has `grep`
-shadowed by a function routing to a different implementation with different exit semantics, so a
-hand-check at the prompt can look right and still be wrong about what the runner does.
+shadowed by a function with different exit semantics, so a hand-check at the prompt can look right
+and still be wrong about what a script does. `scripts/port_gate.py prove-red` is this loop with the
+exit codes read for you.
 
 Two authoring constraints that prevent whole classes of this:
 
 - **Only require writes to per-agent or append-only files.** Mandating a write to a single-owner file
-  with several agents live is a mandated race. Each agent writes its own state doc; shared findings
-  go to one append-only file with the agent's slug on each line.
-- **Human decisions live in a file nobody rewrites**, or they vanish and get relitigated.
+  with several agents live is a mandated race. Each agent writes its own state doc; shared findings go
+  to one append-only file with the agent's slug on each line.
+- **Decisions live in a file nobody rewrites**, or they vanish and get relitigated three weeks later
+  by someone who was not in the room.
 
 ---
 
@@ -89,19 +102,19 @@ Two authoring constraints that prevent whole classes of this:
 
 Scope a deliverable as complete or as one-shot, and say which in the brief. If it is complete:
 
-- The unit relaunches across sessions until every part is landed and verified. Number the passes
-  (`p1`, `p2`, ...) so the state doc is readable.
-- Never conclude while any stated priority is owed, deferred, or pending. A conclusion that says
-  "P1 done, P2-P4 owed" makes a human re-queue it, which is the work you were hired to remove.
-- Out of context, out of turns, out of time: that is *pause and resume*, not done. Write the state
-  doc, name the next action, exit.
-- Genuinely blocked on something only a human can decide: escalate with one short question and stop.
-  Not a silent stop, not an essay. One line of recommendation, one line of question. Check first
-  whether that question is already open from a previous pass: a fresh session has no memory of
-  asking it and will ask again.
+- The unit gets restarted, by you, until every part is landed and verified. Number the sessions
+  (`s1`, `s2`, ...) in the state doc so it stays readable.
+- Never report done while any stated priority is owed, deferred or pending. "P1 done, P2 to P4 owed"
+  reported as a conclusion means someone has to notice and re-queue it by hand, which is exactly the
+  work the brief was supposed to remove.
+- Out of context, out of time: that is *pause and resume*, not done. Write the state doc, name the
+  next action, stop. The next session picks it up from the file, not from the chat.
+- Genuinely blocked on something only a person can decide (§10): say so in one line, with a
+  recommendation, and stop. Check the state doc first for whether that question is already open: a
+  fresh session has no memory of asking it and will ask again.
 
-Be strict because a conclusion marker is usually permanent: a unit that self-concludes one stage
-short never gets retried, and nobody notices until someone reads the state doc.
+Be strict because "done" is sticky. A unit reported complete one stage short does not get retried,
+and nobody notices until someone reads the state doc weeks later.
 
 ---
 
@@ -112,10 +125,12 @@ anything it needs must be written down in the pass that learns it.
 
 Continuity lives in three places, all in the repo or the worktree:
 
-1. **The branch.** `campaign/<slug>`, one per unit, always pushed before the session ends. Unpushed
-   work is lost work.
-2. **The commits.** Small, one mechanism each, with the measurement in the message. `boltz2 trimul:
-   fuse gate+out, 30.9s -> 24.1s, CIF sha unchanged` is worth more than any note about it.
+1. **The branch.** `port/<slug>`, one per unit, always pushed before the session ends. Unpushed work
+   is lost work: a session that ends with commits only in a local worktree has produced nothing you
+   can act on.
+2. **The commits.** Small, one mechanism each, with the measurement in the message.
+   `yourmodel trimul: fuse gate+out, 30.9s -> 24.1s, output sha unchanged` is worth more than any
+   note written about it afterwards, because it cannot drift away from the change it describes.
 3. **The state docs.** `notes/PORT_STATE.md` is where the port is, one file for the whole port,
    amended every session, under two screens. Beside it, one `notes/state-<workstream>.md` per
    parallel line of work, append-only, one section per pass: what was measured (with numbers), what
@@ -141,7 +156,7 @@ Three isolations, all required. Missing any one produces failures that look like
 
 ```bash
 git worktree list                                    # check the branch is not checked out already
-git worktree add ~/wt/<slug> -b campaign/<slug> origin/main
+git worktree add ~/wt/<slug> -b port/<slug> origin/main
 ```
 
 Never `git worktree add -f`. The `-f` overrides the one safety check you want: git normally refuses
@@ -180,20 +195,23 @@ by default. A deliberate multi-card scaling run is a separate experiment.
 
 ## 6. Merge discipline
 
-Agents push branches, one owner merges, and that owner runs the preflight itself:
+Agents push branches, one person merges, and that person runs the preflight themselves. Not the
+agent that did the work: its report that the merge is clean is a claim about a command it ran, and §7
+is about why that is not the same thing as the command's output.
 
 ```bash
 git fetch origin
-git log --oneline origin/main..origin/campaign/<slug>          # what actually landed on the remote
-git diff --stat origin/main...origin/campaign/<slug>
+git log --oneline origin/main..origin/port/<slug>          # what actually landed on the remote
+git diff --stat origin/main...origin/port/<slug>
 git merge-base --is-ancestor <sha> origin/main && echo "already merged"
 ```
 
 Four traps, each of which has silently dropped or duplicated real work:
 
-- **Stale local ref.** An agent commits, pushes, exits without fast-forwarding its own local branch
-  pointer. A preflight against the *local* name reports "0 commits ahead, empty diffstat" and reads
-  as "nothing to merge" while three real commits sit on the origin ref. Compare against origin.
+- **Stale local ref.** A session commits, pushes, then exits without fast-forwarding its own local
+  branch pointer. A preflight against the *local* name reports "0 commits ahead, empty diffstat",
+  which reads as "nothing to merge" while three real commits sit on the origin ref. Compare against
+  origin, always.
 - **Stale status claims.** "Branch X is staged awaiting approval" gets copied forward from summary
   to summary and survives days past the actual merge. Re-derive any binary status from git before
   repeating it. Two commands, always cheaper than being wrong.
@@ -230,8 +248,9 @@ The highest-value rule in this document: verify every claim against live state a
   component, not the composition. Import the installed package and print its `__file__` before
   believing a gate scored your checkout. Three consecutive "it's fixed" claims on one bug, each
   verified by grepping the thing just changed, each grep true, bug unchanged, is the usual shape.
-- **Another agent's report is a claim, not a fact.** Especially "I merged it", "I pushed it", "the
-  gate is green". Check git, check the remote, check the artifact.
+- **A session's report is a claim, not a fact.** Especially "I merged it", "I pushed it", "the gate
+  is green". Check git, check the remote, check the artifact. This applies to your own earlier
+  sessions as much as to a subagent's summary.
 - **A red check on a claim that looks true earns one inspection first.** Rows 3 to 7 of §2 are all
   broken checks that read exactly like missing deliverables. Verify the fact by hand, then fix the
   check.
@@ -261,9 +280,9 @@ guard, say so: that is the open item.
 
 Two rules that keep the collection useful:
 
-- **One writer.** Several agents writing the knowledge directory concurrently recreates the
-  working-tree race worktrees exist to prevent. Agents flag a lesson in their conclusion; one owner
-  writes it.
+- **One writer.** Several agents writing `notes/findings/` concurrently recreates the working-tree
+  race that worktrees exist to prevent. An agent names the lesson in its final report; one person
+  writes the file.
 - **A closed negative is knowledge.** Record what failed and the measurement that killed it, or it
   gets re-proposed. A lever killed on a measured accuracy bound comes back weeks later as a *speed*
   proposal on a fresh branch, carrying the milliseconds and not the RMSD that buried it. Grep the
@@ -298,9 +317,9 @@ Escalate, then wait. Each of these is irreversible, public, or changes the model
 | Anything that can change accuracy, including flipping a precision flag, a fusion default, or a bucketing constant | The whole point of the port is that the answer does not change. |
 | Merging a whole new model port | Scope and maintenance commitment, not a technical call. |
 
-Everything else, decide and log. An escalation that turns out obvious costs a human's attention
-every time; a logged judgment call they disagree with gets corrected afterwards. When unsure whether
-something clears the bar, act and log rather than ask.
+Everything else, decide and log. An escalation that turns out obvious costs someone's attention every
+time; a logged judgment call they disagree with gets corrected afterwards, cheaply. When unsure
+whether something clears the bar, act and log rather than ask.
 
 ---
 
@@ -320,5 +339,5 @@ method, not budget (`05-perf-method-and-roofline.md`).
   neighbours shrink, and a label like "DRAM-bound" expires the moment the lever generating that
   traffic is removed. Re-derive the ranking from a fresh profile, not from last week's.
 
-Idle is the cheapest state. An agent with no high-value work should stop, not manufacture busywork,
-and a card with nothing valuable to run should be released rather than held warm.
+Idle is the cheapest state. A session with no high-value work left should stop rather than manufacture
+busywork, and a card with nothing valuable to run should be released rather than held warm.
