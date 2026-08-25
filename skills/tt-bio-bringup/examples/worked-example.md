@@ -72,7 +72,7 @@ fi
 The template starts red, and it names every hole:
 
 ```
-GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
+GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 15 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
   notes/PORT_PLAN.md:46: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden
     fixture, Parity threshold'
@@ -94,6 +94,7 @@ GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
     naming the whole model is the thing this phase exists to replace.
   notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
   notes/PORT_PLAN.md: 'Target' has 4 unanswered item(s), first is '- Chip generation and card count:'
+  notes/PORT_PLAN.md: 'Risks' has 1 numbered item(s) with nothing after the number.
   notes/PORT_PLAN.md: the supported size range reads 'Supported size range to ship (state numbers,
     not "large"):'. That is one number or none. State both ends, because Phase 4 runs a ladder
     across exactly this range and Phase 2 has to prove the top of it fits.
