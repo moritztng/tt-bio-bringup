@@ -465,7 +465,9 @@ newcomer would. Run the cold reader on your `notes/PORT_PLAN.md` before you hand
 
 `agents/` is **not** under `$SKILL`. It sits beside `skills/` in the repository, so the plugin
 install picks it up automatically and the symlink install does not; that is why the README's symlink
-path copies the agent files separately. From an install, `"$SKILL/../../agents"`.
+path copies the agent files separately. To read them from an install, `"$SKILL/../../agents"` works,
+because path lookup resolves `..` through the symlink. `cd "$SKILL/../.."` does **not**: `cd` is
+logical by default and lands in `~/.claude/skills`'s parent instead. Use the path, or `cd -P`.
 
 ## Templates
 
