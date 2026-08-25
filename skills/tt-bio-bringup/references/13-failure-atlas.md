@@ -608,7 +608,7 @@ before tilizing (2.5x). Both bit-exact.
 **Guard.** Before accepting any "hardware ceiling" verdict, profile upload and tilize separately
 from kernel time.
 
-### A tall/narrow matmul at 27% of the compute roof and 33% of the bandwidth roof
+### A tall/narrow matmul that serialises its DRAM write
 **Mechanism.** The op computes, then writes its result to DRAM in series rather than overlapped.
 `time = compute + write` predicted the measured wall to 0.1%; `max(compute, write)` was wrong by
 45%. For a matmul with small K and large M the output write can be three quarters of DRAM traffic.
@@ -690,8 +690,9 @@ one sigmoid pass 0.663 ms/call, one round pass 0.198 ms/call.
 ### A shape-specialised JIT that never reaches steady state
 **Mechanism.** A design loop that draws a new sequence length per trajectory recompiles every
 trajectory, and that compile cost does not amortise. One measured workload spent 55.4% of total
-wall clock on non-amortising compile, and quoting a stage's "% of wall" with compile left in
-overstated a port prize by 3.4x.
+wall clock on non-amortising compile. Quoting a stage's "% of wall" with compile left in
+overstates the prize by `1 / (1 - 0.554)`, which is 2.2x: the compile time is in the denominator
+of every share you quote and none of it is yours to win.
 **Check.** Ask whether the input shape is stable across the loop before pricing anything.
 **Fix.** Bucket the varying axis, or measure and exclude compile explicitly.
 **Guard.** A negative "unattributed time" residual is the signature of nested double-counting (stage

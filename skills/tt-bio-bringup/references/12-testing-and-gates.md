@@ -246,15 +246,18 @@ Do not loosen a tolerance to make a test pass. The procedure:
 
 ## 7. The gate script itself
 
-One script, arms selectable by name, all arms by default.
+One script, arms selectable by name, all arms by default. This is a shape to aim for, not a
+transcription: tt-bio's own `scripts/release_gate.py` names some of these differently (its
+per-model floors live in a dict of dicts, and its preflight is split into `_preflight_msa_cache()`
+plus guards imported from `scripts/gate_guard.py`). Copy the structure, not the identifiers.
 
 ```
-scripts/release_gate.py
+scripts/release_gate.py (the shape, not tt-bio's exact names)
   __doc__        per arm: what it folds, what it asserts, why the floor is where it is, and which
                  escaped bug it exists to catch. This docstring is the spec.
-  MODELS         {slug: (target, ground_truth, rmsd_floor, tm_floor)}
+  MODELS         {slug: the target, its ground truth, and the floors that model must clear}
   DEFAULT_ARMS   non-fold arms (design, capacity, l1-budget, determinism, ...)
-  preflight()    interpreter + pinned dep version, card grant, host load, fixtures. Refuses with
+  a preflight    interpreter + pinned dep version, card grant, host load, fixtures. Refuses with
                  exit 2, printing every problem at once.
   run_<arm>()    returns {"model", "gate": bool, "error", "seconds", ...metrics}
   main()         run selected arms, one table per arm, AND the verdicts, exit

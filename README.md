@@ -47,8 +47,8 @@ long list of ways a port silently goes wrong while every test stays green.
 
 ## Install
 
-Two ways. The plugin is one command and picks up the subagents by itself; the symlink needs a second
-line to copy them, because only the plugin path scans `agents/`.
+Two ways. The plugin path picks up the subagents by itself; the symlink needs a second line to copy
+them, because only the plugin path scans `agents/`.
 
 **As a plugin**, from inside Claude Code:
 
@@ -62,7 +62,7 @@ line to copy them, because only the plugin path scans `agents/`.
 ```bash
 git clone https://github.com/moritztng/tt-bio-bringup.git
 mkdir -p ~/.claude/skills ~/.claude/agents
-ln -s "$PWD/tt-bio-bringup/skills/tt-bio-bringup" ~/.claude/skills/tt-bio-bringup
+ln -sfn "$PWD/tt-bio-bringup/skills/tt-bio-bringup" ~/.claude/skills/tt-bio-bringup
 cp tt-bio-bringup/agents/*.md ~/.claude/agents/
 ```
 
@@ -71,7 +71,7 @@ Or per project, so the whole team gets it from your own repo:
 ```bash
 mkdir -p .claude/skills .claude/agents
 git submodule add https://github.com/moritztng/tt-bio-bringup.git third_party/tt-bio-bringup
-ln -s ../../third_party/tt-bio-bringup/skills/tt-bio-bringup .claude/skills/tt-bio-bringup
+ln -sfn ../../third_party/tt-bio-bringup/skills/tt-bio-bringup .claude/skills/tt-bio-bringup
 cp third_party/tt-bio-bringup/agents/*.md .claude/agents/
 ```
 

@@ -273,7 +273,7 @@ from tt-bio, and you copy it in once and leave it alone.
 Name files `tests/test_yourmodel_<component>.py` and pytest finds them (`testpaths = ["tests"]`).
 Import shared test helpers as `from conftest import ...`, and load a `scripts/<port>/*.py` harness
 through `tests/_port_module.py::port_module("yourmodel_port", "parity_gate")`, not `sys.path.insert`
-plus a bare import: four ports ship a `parity_gate.py` and a bare import resolves by collection order.
+plus a bare import: five ports ship a `parity_gate.py` and a bare import resolves by collection order.
 
 **Device marker.** Any test that opens a card gets `@pytest.mark.device`. The conftest resolves four
 states: no card node present, skip. `TT_VISIBLE_DEVICES` set but empty, skip (a declared CPU-only

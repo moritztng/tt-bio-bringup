@@ -13,14 +13,19 @@ was established. Delete what is no longer true rather than appending a correctio
 ## Environment
 
 - Chip generation, card count, host:
+<!-- ttnn has no __version__ attribute and tt-metal is not a distribution name, so read the
+     version with: ./env/bin/python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"
+     Answers go on the same line as the label, after the colon. -->
 - Package versions that matter (ttnn / tt-metal / torch), pinned where:
-  read ttnn's with `./env/bin/python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"`;
-  it has no `__version__` attribute and `tt-metal` is not a distribution name
 - The interpreter each gate runs under ($REF_PY for the capture, ./env/bin/python3 for pytest):
 - The effort bar for this campaign (05-perf-method-and-roofline.md section 1), as two numbers:
 - Baseline test-suite result before any of my changes (pass / fail / skip):
 
 ## Established facts
+
+<!-- No "none yet" row here on purpose, unlike Open questions and Killed lines of work. By the time
+     the Phase 0 gate runs you have established at least one fact (the reference runs on CPU, and
+     what it produced), so an empty table here is a prompt, not a state the phase can end in. -->
 
 | Date | Fact | How it was verified |
 |---|---|---|
@@ -32,6 +37,9 @@ was established. Delete what is no longer true rather than appending a correctio
 | none yet | none yet | none yet |
 
 ## Decisions taken
+
+<!-- Same: no "none yet" row. Choosing the fork point and the interpreter each gate runs under are
+     decisions, and you have made both before this gate runs. -->
 
 | Date | Decision | Why | What would reverse it |
 |---|---|---|---|

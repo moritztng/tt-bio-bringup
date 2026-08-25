@@ -55,7 +55,7 @@ per-module parity test is for.
 | `F.gelu` | `ttnn.gelu` | **erf vs tanh approximation. Check both sides.** |
 | `F.softmax` | `ttnn.softmax`, or `ttnn.transformer.attention_softmax` when it is an attention mask | |
 | `F.log_softmax` | **no direct op.** `ttnn.log(ttnn.softmax(x))`, or keep it on host | the naive composition loses precision where torch's fused version does not |
-| `nn.Dropout` | none, and none needed | you are porting inference. `eval()` on the reference, nothing on the device side |
+| `nn.Dropout` | none needed (`ttnn.experimental.dropout` exists) | you are porting inference. `eval()` on the reference, nothing on the device side |
 
 **Normalization**
 

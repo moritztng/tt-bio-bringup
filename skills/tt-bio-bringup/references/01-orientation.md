@@ -76,7 +76,7 @@ Three details, so you know exactly what waits on what:
 - **One Phase 0 column prefers step 2.** The op inventory is better resolved than guessed, and
   resolving it imports `ttnn`. That import needs no card, only `TT_VISIBLE_DEVICES` pinned empty,
   which is what `15-torch-to-ttnn-op-map.md` §1 does. If you cannot build `env` yet, fill the column
-  from §2's table, mark the rows you could not resolve, and re-resolve them in Phase 2. Write that
+  from `15-torch-to-ttnn-op-map.md` §2's table, mark the rows you could not resolve, and re-resolve them in Phase 2. Write that
   decision in `notes/PORT_STATE.md` rather than letting it block the phase.
 - **Two Phase 0 fields do want the hardware**, chip generation and card count. Write your intent,
   append "unconfirmed", and confirm at step 3.
@@ -126,9 +126,12 @@ It lists every board on the host with its chip generation and its `/dev/tenstorr
 the chip generation and the count into `notes/PORT_STATE.md`. Every performance claim you make from
 here on has to name that hardware, because Wormhole and Blackhole numbers are not comparable.
 
-`tt-smi -ls` prints two numbers per card and they are **not the same number** on a multi-card host:
-the UMD chip ID (PCI BDF order) and the `/dev/tenstorrent/<n>` kernel node. `TT_VISIBLE_DEVICES`,
-`ttnn`'s device ids, `tt-smi -r` and `--device_ids` all take the **UMD chip ID**. The node number is
+`tt-smi -ls` prints the UMD chip ID (PCI BDF order), the PCI BDF, and the `/dev/tenstorrent/<n>`
+kernel node, and the first and last are **not the same number** on a multi-card host.
+`TT_VISIBLE_DEVICES`, `ttnn`'s device ids and `--device_ids` take the **UMD chip ID**; `tt-smi -r`
+accepts any of the three, so it is the one command that will not tell you when you have the wrong
+one. Checked against tt-smi 5.0.0, and on a host with no UMD cluster descriptor `-ls` falls back to
+a listing without the UMD column at all. The node number is
 what `lsof`, `/proc/<pid>/fd` and dmesg show you, so it is the one you use to find out who is holding
 a card, and it is the wrong one to pin with. Full treatment in
 `09-devices-and-hardware-operations.md` §1, including how to extract the live mapping.
@@ -188,7 +191,7 @@ else
     cp "$SKILL/gates/port_gate.py" scripts/
 
     # Upstream ignores /notes/ because its planning lives elsewhere; yours does not.
-    grep -qE '^/?notes/?$' .gitignore && sed -i -E '/^\/?notes\/?$/d' .gitignore
+    grep -qE '^/?notes/?$' .gitignore 2>/dev/null && sed -i -E '/^\/?notes\/?$/d' .gitignore
     git check-ignore notes/PORT_PLAN.md && echo "still ignored, fix .gitignore by hand"
 
     # port_gate.py is standard library only, so a bare python3 is correct here and only here:

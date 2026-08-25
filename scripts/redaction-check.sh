@@ -206,6 +206,10 @@ done
 
 if [ "$fail" -eq 0 ]; then
   echo "redaction check clean ($NFILES files, ${#PATTERNS[@]} patterns)"
+  # redaction-local.txt is gitignored, so a fresh clone runs the built-in patterns only and no
+  # hostname or staff name is scanned for. The count in the line above is the only difference, and
+  # a contributor has no way to know what it should be. Say it outright.
+  [ -f "$LOCAL" ] || echo "  (built-in patterns only; add $LOCAL for your own hostnames and names)"
   exit 0
 fi
 echo

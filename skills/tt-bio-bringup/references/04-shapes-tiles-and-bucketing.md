@@ -21,7 +21,9 @@ t.padded_shape   # physical, e.g. [1, 8, 128, 128]
 ```
 
 **Cost is quantised.** An axis of 33 costs 64. For an O(S^3) op such as triangle multiplication, rounding a token
-axis to the next multiple of 64 rather than 32 costs up to `(128/96)^3 = 2.37x` the work, every run, forever.
+axis to the next multiple of 64 rather than 32 costs `(128/96)^3 = 2.37x` the work at N in 65..96, every run,
+forever. The general penalty is `((k+2)/(k+1))^3` where `ceil32(N) = 32(k+1)`, so it is worst at small N (8x below 32)
+and fades as N grows.
 
 **The pad's contents are unspecified.** Some ops zero it, some leave stale buffer data, some leave it unwritten
 (`ttnn.scatter` does). Never assume zero, and never assume the consumer ignores it.
@@ -155,7 +157,8 @@ reduction axis: bf16/fp32 accumulation order changes even with exact zeros.
 - Per-chunk bit-exactness does not imply fold-level bit-exactness. A transition op's output was found to depend on
   **allocation sequence**: identical values, identical boundaries, all 52 chunks `torch.equal` in isolation, and the
   fold's output still moved. Allocation order is a hidden input to reduction order, so check the final output.
-- `ttnn.slice` is always a copy, never a view (`buffer_address()` differs from the parent's). Any plan of the form
+- `ttnn.slice` is a copy, never a view (`buffer_address()` differs from the parent's) for every real subrange;
+  only a whole-tensor slice with unit step short-circuits and returns the input. Any plan of the form
   "write into a slice instead of concatenating" is not an optimisation.
 
 ## 7. When a batch or sample dimension defeats bucketing
@@ -236,7 +239,8 @@ different. That is ~14 cycles/element against `add`'s ~2, the signature of a sca
 (index dtype, ROW_MAJOR vs TILE, `sub_core_grids`, `out=` preallocation). **Do not design a port around
 scatter/gather as cheap sparse indirection.** The levers are calling it less (one decoder called `scatter` twice
 with bit-identical inputs across recycles and cached instead: free, bit-exact, ~7% of the step) or an upstream
-kernel fix. `ttnn.scatter` also rejects fp32, and int32/uint32 rows longer than 256 elements.
+kernel fix. `ttnn.scatter` also rejects fp32 in TILE layout (`scatter.cpp:106`), and int32/uint32 rows longer than 256
+elements.
 
 ## 10. Shape generality: the size-ladder guard
 

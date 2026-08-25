@@ -572,7 +572,9 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
                          _bare(l))]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
-                        f"first is {empty[0]!r}")
+                        f"first is {empty[0]!r}. The answer goes on the same line as the label, "
+                        "after the colon: an indented line under the bullet is a separate "
+                        "paragraph to a renderer and is not read as the answer.")
     # A table is content too: Randomness is legitimately a table and no prose. An HTML comment
     # is not: "<!-- deliberately left blank -->" is a blank section wearing a note.
     stripped = re.sub(r"<!--.*?-->", "", stripped, flags=re.S)
