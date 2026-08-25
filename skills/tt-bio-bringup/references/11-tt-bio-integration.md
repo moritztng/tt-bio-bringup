@@ -257,9 +257,9 @@ cannot tell which already exist, and budgets for writing all ten.
 | `scripts/integration_envelope.py`, `scripts/lever_census.py` | `tt_bio/yourmodel_*.py`, the port itself |
 | `scripts/profiling/roofline_bh.py`, measured roofs | `tests/test_yourmodel_*.py`, your tests |
 | `scripts/profiling/graph_capture_probe.py`, op counts | `docs/yourmodel-parity.md`, `docs/yourmodel-perf.md` |
-| `tests/_port_module.py`, importing a port harness | |
-| `tests/conftest.py`, the `device` marker and its fixtures | |
-| `tests/test_perf_model_coverage.py`, `tests/test_repo_root_clean.py` | |
+| `tests/_port_module.py`, importing a port harness | `scripts/yourmodel_port/forward.py`, the Phase 2 one-shot forward |
+| `tests/conftest.py`, the `device` marker and its fixtures | `scripts/yourmodel_port/task_metric.py`, the Phase 3 metric |
+| `tests/test_perf_model_coverage.py`, `tests/test_repo_root_clean.py` | `tests/token_axis_probe.py`, the ragged-tail probe of `04` §3 |
 
 Extending one on the left means adding a row to a table or a dict inside it. If you find yourself
 copying one to `scripts/yourmodel_gate.py`, stop: that is section 5's rule being broken, and the copy

@@ -2,8 +2,8 @@
 
 This document decides the *order* in which you try things once a bio model is numerically correct on Tenstorrent. Twelve
 levers, each with the precondition that makes it pay, the magnitude to expect, and the way it fails. Working the list
-top-down on a naive port typically takes a first working fold from "far slower than the CPU reference" to within
-striking distance of a GPU baseline. Working it bottom-up (custom kernels first, program-config knobs one op at a time)
+top-down on a naive port typically takes a first working fold from "far slower than the CPU reference" to the
+3x-6x first-week range this document's own schedule predicts, and 1.2x-1.5x again over the following month. Working it bottom-up (custom kernels first, program-config knobs one op at a time)
 is the most expensive mistake in this repo's history.
 
 Read this when the port is correct, `05-perf-method-and-roofline.md` has given you a measured decomposition and a floor, and you need
@@ -23,7 +23,7 @@ to pick what to build next.
 | 8 | Matmul program config | one named op is far off its measured roof | 1.02x-1.2x on the op |
 | 9 | Remove per-element ops | any scatter/gather/index op in a hot path | up to 58x on that op |
 | 10 | Bucketing | many distinct shapes, compile-bound | bounds a ~60 s cold cost |
-| 11 | Host-side work | host share > 5% of wall clock | varies |
+| 11 | Host-side work | host share > 5% of wall clock | up to 1/(1 - host share); measure yours |
 | 12 | Custom kernels | everything above exhausted, floor says room remains | 1.06x-1.34x, days of work |
 
 Magnitudes are whole-fold unless stated. **Never multiply two levers' headline numbers.** Levers measured from different
@@ -339,7 +339,8 @@ sparse-indirection primitive, and do not assume a fused kernel rescues it. The o
 **What it is.** Padding a variable-length axis to a fixed multiple so different inputs reuse compiled kernels. Full
 treatment in `04-shapes-tiles-and-bucketing.md` §5; this is the ranking summary.
 
-**When it pays.** When per-shape JIT compile dominates: ~0.85 s per new shape for a small LM, tens of seconds for a
+**When it pays.** When per-shape JIT compile dominates. Measure your own per-shape cost
+(`04-shapes-tiles-and-bucketing.md` §5): ~0.85 s per new shape for a small LM, tens of seconds for a
 folding trunk. Compiles are disk-cached (`~/.cache/tt-metal-cache`), so it is one-time per shape per machine; an
 in-process program cache removes a further ~8-10 s/shape. Bucketing bounds the distinct-shape count so the cache
 saturates after one run. Predict by counting distinct lifetime shapes times per-shape compile, against the padded work
@@ -413,7 +414,8 @@ Order matters because each step changes what the next measurement means. Do not 
 | 6 | **Lever 4: fusion**, screened absorber-first. Most candidates die in a four-minute microbenchmark; an evidenced NO-GO is a full pass. | 1.06x-1.34x |
 | 6-7 | Multi-size validation: re-run the ladder at a small rung, your tuned size, and a large rung. Any gate that fires at one and is dark at another is a defect, not a tradeoff. | no dark gates |
 
-A realistic first-week outcome on a naive but correct port is 3x-6x, dominated by levers 1, 5, 9 and 11. Levers 3, 4, 8
-and 12 are the second month, worth roughly 1.2x-1.5x combined on top of a stack that already has the first four. If a
+A realistic first-week outcome on a naive but correct port is 3x-6x, dominated by levers 1, 5, 9 and 11. Levers 3, 4
+and 8 start at the end of that week, in the rows above, and most of their value lands in the second month along with
+lever 12: roughly 1.2x-1.5x combined on top of a stack that already has the first four. If a
 week produces less than 2x, the most likely cause is that the measurement was never warm, never synced, or never
 decomposed.

@@ -413,7 +413,7 @@ of items it is given: a CA-intended normalization applied to an all-atom set cha
 unconstrained hinge as its softest degree of freedom. Four independent unrelated non-bit-exact changes all landed
 in the same 7.7-9.0 Å RMSD band; per-domain superposition showed each domain held at 0.73-1.45 Å with only a
 45-72 degree hinge rotation. **A number invariant to which change produced it is not measuring the change.** Pair
-such a fixture with a monomeric control of similar size: there the same changes moved 0.28-0.33 Å, 20x smaller.
+such a fixture with a monomeric control of similar size: there the same changes moved 0.28-0.33 Å, 23-32x smaller.
 Bit-exact arms are immune, which is how this survives whole campaigns unseen.
 
 **Multi-sample models: compare identity, not rank.** If output files are named by confidence rank and the top-two

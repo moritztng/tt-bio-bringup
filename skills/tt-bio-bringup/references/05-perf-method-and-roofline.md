@@ -184,8 +184,9 @@ Rules:
 - **Kill a lever whose best case is below the effort bar.** One fused-kernel proposal died on
   "predicted landing 12.92 ms/call against an existing kernel's 13.33" before any code was written.
 - **Scale per-call rates by the model's own repeat count before comparing to headroom.** A trunk
-  runs its blocks once per recycling cycle; a 0.54 %-per-recycle cost against a 0.33 % margin was
-  called "room", but with 10 recycles it was 1.0022x, a miss.
+  runs its blocks once per recycling cycle, so a per-recycle cost has to be multiplied by the trip
+  count before it meets a fold-level margin. A 0.54 %-per-recycle cost against a 0.33 % fold margin
+  was called "room"; over 10 recycles it is 5.4 % against 0.33 %, a 16x miss.
 - **A ratio is only meaningful if numerator and denominator are the same unit and protocol.** One
   headline ("91.5 % host-dispatch-bound, 16x host/device gap") divided fold time by 48 blocks instead
   of 48 blocks x 10 recycles. Corrected and measured directly, the trunk was device-compute-bound and
@@ -207,8 +208,8 @@ reproducible direction.
 
 Magnitudes, so you know how far these move a number:
 
-- **Oversync inflation, ~2x.** Isolated per-op timings for one FFN's pieces summed to 17.93 ms
-  against a measured chain cost of 14.657 ms. A single `ttnn.slice` read 0.0433 ms/chunk isolated vs
+- **Oversync inflation, 1.2x on a chain and ~2x on a single op.** Isolated per-op timings for one
+  FFN's pieces summed to 17.93 ms against a measured chain cost of 14.657 ms, 1.22x. A single `ttnn.slice` read 0.0433 ms/chunk isolated vs
   **0.0222 ms/chunk when issued 52-at-a-time** the way the model issues them, a 95 % over-read on one
   leg, enough to flip a pre-committed kill gate.
 - **Residency under-pricing, 1.8x.** An L1-residency lever screened at -3.87 ms/step delivered
@@ -288,10 +289,21 @@ ligand/CCD parsing and per-call Python overhead are not free and often are not c
 cross-platform comparison.
 
 Mechanism to watch for: **a large platform-independent additive cost pulls every ratio toward 1.** In
-one measured fold, 12.7 s of a 21.995 s reference run was host featurisation, and the same featurizer
-ran on every timed fold of the accelerated arm too (no cache). Whole-fold ratio 3.69x, device-only
-ratio ~9-10x. The whole-fold number was correct for its protocol and understated the accelerator gap
-by 2.5x, flattering whichever side is proportionally slower.
+one measured fold, host featurisation ran uncached on every timed fold of both arms. The whole-fold
+ratio came out 3.69x and the device-only ratio ~9.5x: the whole-fold number was correct for its
+protocol and understated the accelerator gap by 2.5x, flattering whichever side is proportionally
+slower.
+
+Recover the shared cost rather than assuming it. With reference total `T`, whole-fold ratio `r` and
+device-only ratio `d`, the additive term is
+
+```
+H = T * (1/r - 1/d) / (1 - 1/d)
+```
+
+At `T` = 21.995 s, `r` = 3.69 and `d` = 9.5 that is **4.07 s**. Compute it for your own pair before
+quoting either ratio: if `H` comes out larger than the whole-fold time divided by `r`, your two
+ratios are not describing the same run.
 
 One corollary. Host prep that is **invariant across calls** is a lever, not a constant: one template tensor
 re-uploaded every recycling cycle instead of once per fold cost ~3.6 s/fold, worth 1.06-1.10x for a
@@ -333,8 +345,8 @@ re-measurement.
 ## 11. Noise, and when to bisect
 
 A single-shot regression on a perf gate is usually noise. Gate legs that run one cold-inflated timed
-call with no warm loop carry **±20-30 % run-to-run noise**, which sits inside any 15 % threshold, so
-they will alarm on nothing forever.
+call with no warm loop carry **±20-30 % run-to-run noise**, and a 15 % threshold sits inside that
+band, so the leg alarms on its own noise forever.
 
 - **Do not bisect first.** Run an **endpoint A/B**: baseline commit vs current HEAD, interleaved reps,
   same host, cache and driver. If the endpoints match, the baseline was the outlier: reseed honestly

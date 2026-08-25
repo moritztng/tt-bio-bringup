@@ -113,10 +113,10 @@ reference documents to read before starting it, so context stays small until it 
 `skills/tt-bio-bringup/examples/worked-example.md` shows the whole thing done on a small model if
 you would rather see it than read about it.
 
-Three things to hold Claude to, because they are what make the difference:
+Three things to hold Claude to:
 
 1. **No phase starts before the previous gate exits 0**, and a gate is a command you can run, not a
-   summary paragraph. All eight are commands, and five of them call `gates/port_gate.py`.
+   summary paragraph. All eight are commands, and five of them call `scripts/port_gate.py`, the copy you make in your fork.
 2. **No performance number without a matched-protocol A/B**: same shapes, same batch, same warm
    state, same card, repeated runs, and the statistic named. Median for symmetric noise, **min** when
    the noise is one-sided, which host contention is (`05-perf-method-and-roofline.md` §11).

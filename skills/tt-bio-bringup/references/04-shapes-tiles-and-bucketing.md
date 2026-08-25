@@ -110,7 +110,10 @@ compile-time reasons, and the first port that skipped the padding wrapper ran 11
 
 ## 5. Bucketing: the ladder, and what recompilation costs
 
-Each distinct kernel *shape* compiles once, cold, at roughly **8-60 s**, then persists in the on-disk cache
+Each distinct kernel *shape* compiles once, cold. **Measure your own**: it scales with the kernel, and the
+figures in this repository span **~0.85 s for a small language model, ~8-10 s for a typical trunk op, and up
+to ~60 s for a large fused kernel**. Multiplying a shape count by the wrong end of that range is a 70x error
+in a GO/NO-GO. Time one cold compile of your own hottest op and use that. It then persists in the on-disk cache
 (`TT_METAL_CACHE`). Bucketing exists so the second input of a different length reuses the first's programs.
 
 **Use 32, one constant for the whole codebase.**

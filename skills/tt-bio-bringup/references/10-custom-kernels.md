@@ -37,7 +37,7 @@ Two more that change the plan rather than gating it:
 - **If the model is dispatch-bound, no kernel fixes it.** At a 1000-residue fold the triangle
   multiplication's matmuls cost ~2 s of that step's ~48 s; the rest was ~12,000 host dispatches. The
   lever is trace capture (`ttnn.begin_trace_capture` / `ttnn.execute_trace`).
-- **Wins that did ship** are 1.05x to 1.35x end-to-end, from bandwidth deletions, not from
+- **Wins that did ship** are 1.06x to 1.34x end-to-end, from bandwidth deletions, not from
   out-computing the library.
 
 ## 2. Candidates that are actually worth it
@@ -121,7 +121,9 @@ doing `add_executable` plus `target_link_libraries(... TT::Metalium)`, add `add_
 parent `CMakeLists.txt`, then:
 
 ```bash
-cmake build -DBUILD_PROGRAMMING_EXAMPLES=ON        # flag is OFF by default
+cmake -B build -DBUILD_PROGRAMMING_EXAMPLES=ON     # -B names the build dir; `cmake build` would
+                                                  # read `build` as the SOURCE dir and fail.
+                                                  # The flag is OFF by default.
 cmake --build build --target metal_example_<name>
 ```
 
@@ -204,8 +206,9 @@ Measure inside the real model at the production size, warm.
   go/no-go gate priced off isolated numbers is provisional.
 - **A screen that prices only the prize is half a screen.** Net time is prize minus cost. A fused
   pair-FFN kernel passed GO three times on the prize alone and was dead: fitting its operand into L1
-  forces a smaller output block width, whose own measured penalty (2.452 ms/call) exceeded the
-  fusion's prize (1.81-2.89 ms/call). Price both halves in one pass, same shape, same L1 budget.
+  forces a smaller output block width, whose own measured penalty (2.452 ms/call) landed inside the
+  fusion's prize range (1.81-2.89 ms/call) and above its midpoint, so the net was zero to negative
+  across the shapes that mattered. Price both halves in one pass, same shape, same L1 budget.
 - **Price the comeback.** Fusing DRAM traffic into a transaction-bound kernel does not delete all
   the traffic it appears to: 27-37% of the "deleted" cost came back as new latency, because two page
   reads before one barrier expose roughly twice the reader latency. Budget ~1/3 back, not zero.

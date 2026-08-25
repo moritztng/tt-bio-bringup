@@ -122,6 +122,11 @@ The plan wants a count per op, and torch will tell you rather than making you gr
 import torch
 from collections import Counter
 
+# Attribute reads and metadata calls go through the same hook and are not ops. Without this
+# filter the top two entries on a small transformer are `__get__` (44) and `dim` (4).
+NOT_AN_OP = {"__get__", "__set__", "__len__", "dim", "size", "numel", "shape", "to", "item",
+             "device", "dtype", "is_floating_point", "requires_grad_", "_set_grad_enabled"}
+
 class Count(torch.overrides.TorchFunctionMode):
     def __init__(self): self.n = Counter()
     def __torch_function__(self, func, types, args=(), kwargs=None):
@@ -131,8 +136,16 @@ class Count(torch.overrides.TorchFunctionMode):
 with Count() as c, torch.no_grad():
     model(example_input)
 for name, n in c.n.most_common():
-    print(f"{n:6d}  {name}")
+    if name not in NOT_AN_OP:
+        print(f"{n:6d}  {name}")
 ```
+
+On the worked example's toy model at L=64 that prints `linear 10`, `add 9`, `layer_norm 8`,
+`transpose 8`, `zeros_like 4`, `masked_fill_ 4`, `multi_head_attention_forward 4`, `gelu 4`,
+`dropout 4`, `unsqueeze 2`, `embedding 1`. Two things to notice, and both will happen to you:
+`multi_head_attention_forward` is one composite entry hiding the projections and the softmax inside
+it, so expand any fused torch op before you map it; and `dropout` appears even under `eval()`,
+because the call still happens and becomes the identity.
 
 This counts calls in one forward, which is what the plan means. A model with a recycling or
 diffusion loop will report the loop body once per trip, so state the trip count beside the number
