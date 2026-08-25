@@ -195,11 +195,19 @@ entering the code gets a gate row in the same commit.**
 
 ```python
 tuples  = {n: getattr(main, n) for n in dir(main) if n.endswith("_MODELS")}
+if not tuples:                       # the convention changed; discovering nothing is not coverage
+    raise SystemExit("found no *_MODELS tuples in tt_bio.main: fix this check, do not pass it")
 shipped = set().union(*tuples.values())
+if not shipped:
+    raise SystemExit(f"{sorted(tuples)} are all empty: this gate would score zero models")
 uncovered = shipped - set(SPECS) - set(SPECS_EXEMPT)
 if uncovered:
     raise SystemExit(f"no perf coverage for {sorted(uncovered)}; add SPECS or a SPECS_EXEMPT reason")
 ```
+
+The two guards at the top are the point. Without them, a renamed convention makes `tuples` empty,
+`set().union()` returns the empty set, `uncovered` is empty, and the gate passes having enumerated
+zero models: the vacuous pass this document exists to prevent, in this document's own example.
 
   Discover the tuples, do not name them: a version written against the three that existed at the
   time went blind when a new CLI verb brought its own tuple, and the model it was built to protect

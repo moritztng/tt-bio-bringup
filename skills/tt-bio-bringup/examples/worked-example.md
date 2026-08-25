@@ -187,7 +187,8 @@ that is the point**: it is the fixture that catches an unmasked tile tail, which
 that produced 72x the reference error in a shipped model with no error message and no log line.
 
 ```bash
-python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
+export REF_PY=./env/bin/python3    # MiniFold's reference needs no venv of its own; yours might
+"$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
 ```
 
 ```
@@ -204,17 +205,17 @@ reference.
 **The gate**: the capture reproduces, byte for byte.
 
 ```bash
-python3 scripts/port_gate.py determinism \
-  --run 'python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts' \
+./env/bin/python3 scripts/port_gate.py determinism \
+  --run '"$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts' \
   --artifact scripts/minifold_port/parity_artifacts/minifold_117.pt
 ```
 
 ```
---- run 1: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
+--- run 1: "$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
 captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
 blocks.0 kwargs captured: ['mask']
 blocks.0 mask is a tensor: True
---- run 2: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
+--- run 2: "$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
 captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
 blocks.0 kwargs captured: ['mask']
 blocks.0 mask is a tensor: True
@@ -267,10 +268,10 @@ example** and are marked so.
 Weights loaded, one forward at L=64, allowed to be slow and allowed to be wrong.
 
 ```bash
-TT_VISIBLE_DEVICES=0 python3 -m pytest tests/test_minifold_weights.py -q
-python3 scripts/port_gate.py determinism \
-  --run 'TT_VISIBLE_DEVICES=0 python3 scripts/minifold_port/forward.py --len 64 --out scripts/minifold_port/fw_card0.npy' \
-  --artifact scripts/minifold_port/fw_card0.npy
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_minifold_weights.py -q
+./env/bin/python3 scripts/port_gate.py determinism \
+  --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/minifold_port/forward.py --len 64 --out scripts/minifold_port/fw_card${CARD}.npy' \
+  --artifact scripts/minifold_port/fw_card${CARD}.npy
 ```
 
 The weight test asserts a set equality in both directions, not a loop that checks each name it
@@ -327,7 +328,7 @@ contact precision 0.71 on device against 0.72 for the reference, on the three-ta
 the reference's own seed-to-seed spread of 0.03.
 
 ```bash
-python3 scripts/port_gate.py report docs/minifold-parity.md \
+./env/bin/python3 scripts/port_gate.py report docs/minifold-parity.md \
   --require-heading "Component parity" --require-heading "Negative controls"
 ```
 
@@ -340,7 +341,7 @@ The ladder, across the whole range the plan promised: 16, 17, 31, 32, 33, 64, 11
 380, 511, 512. Every input mode. The OOM boundary, written down.
 
 ```bash
-TT_VISIBLE_DEVICES=0 python3 -m pytest tests/test_minifold_ladder.py -q
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_minifold_ladder.py -q
 ```
 
 *Illustrative* finding, and the reason this phase is not a formality: the chunked head path was
@@ -400,12 +401,14 @@ One row in `_MODEL_RESULTS_PREFIX`, one branch in `_WorkerState.load_model`, one
 `_predict_minifold_one`. Shared helpers, not private copies. Then:
 
 ```bash
-python3 scripts/packaging_smoke.py
-TT_VISIBLE_DEVICES=0 python3 scripts/release_gate.py
-python3 -m pytest tests/test_perf_model_coverage.py tests/test_repo_root_clean.py -q
+./env/bin/python3 scripts/packaging_smoke.py
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/release_gate.py
+./env/bin/python3 -m pytest tests/test_perf_model_coverage.py tests/test_repo_root_clean.py -q
 ```
 
-*Illustrative:* `packaging_smoke.py` failed the first time. The chunked-head kernel's `.cpp` was on
+*Illustrative, and note it is a **hypothetical** for this model:* MiniFold never built a kernel, so
+this failure cannot happen to it. It is here because it is what packaging catches, and every port
+that does write a kernel meets it. Suppose the chunked-head kernel had been built. Its `.cpp` was on
 disk, imported fine in the editable install, and was absent from the wheel. Zero signal from every
 other check, because an editable install reads the file from the source tree. That is the only guard
 that catches this class, and it has caught it repeatedly.

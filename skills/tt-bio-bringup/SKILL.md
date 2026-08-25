@@ -159,8 +159,17 @@ Produce `notes/PORT_PLAN.md` from `templates/PORT_PLAN.md`:
 **Exit gate:**
 
 ```bash
-./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md
+python3 scripts/port_gate.py plan notes/PORT_PLAN.md
+python3 scripts/port_gate.py report notes/PORT_STATE.md --no-tables \
+    --require-heading "Environment" --require-heading "Decisions taken"
 ```
+
+Both arms run under a bare `python3` on purpose: `port_gate.py` is standard library only, and Phase 0
+has to be finishable before `env` exists. The second arm is there because `PORT_STATE.md` is the
+first thing a fresh session reads and nothing else in this workflow ever looks at it. Its
+`Environment` section is where `$REF_PY` and the effort bar from
+`references/05-perf-method-and-roofline.md` §1 get written down, and a session that cannot find
+those re-derives them differently.
 
 Exit 0 requires every section present, every table row filled, every module carrying a named golden
 and a threshold, a size range with numbers in it, and no placeholder or `TBD` anywhere.

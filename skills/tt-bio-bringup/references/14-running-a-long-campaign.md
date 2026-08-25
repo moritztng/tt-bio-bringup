@@ -9,7 +9,10 @@ while exactly one person merges, and verify every claim against live state as yo
 Read this when a port is going to take more than a week, when you are about to run more than one
 Claude Code session at a time, or when a session reported something done and it was not.
 
-**What this assumes you have: Claude Code, git, and one card.** No dispatcher, no queue, no
+**What this assumes you have: Claude Code, git, and at least one card.** Everything up to §5 works
+on exactly one; §5 is about running several agents at once and needs one card per agent. On a
+single card, run the agents one at a time and keep the lease anyway, because the thing it protects
+you from is your own second terminal. No dispatcher, no queue, no
 orchestration service. A unit of work is a markdown file plus a branch, you start each session
 yourself, and the done-check is a command you run in your own shell. Everything below works that way
 on purpose. If you later build automation around it, the primitives do not change.
@@ -168,7 +171,9 @@ checkout nobody touched. For a detached tree, `git worktree add --detach` and me
 is physically opened, so a second opener fails cleanly instead of corrupting both runs:
 
 ```bash
-exec 9>"$HOME/.tt-leases/card${N}.lock"
+N=${CARD:?which card: the UMD chip id from tt-smi -ls}
+mkdir -p "$HOME/.tt-leases"                 # exec 9> fails on a missing directory, and then
+exec 9>"$HOME/.tt-leases/card${N}.lock"     # flock -n 9 operates on a bad descriptor
 flock -n 9 || { echo "card $N leased by someone else"; exit 1; }
 TT_VISIBLE_DEVICES=$N ./env/bin/tt-bio predict ...
 ```
@@ -263,20 +268,14 @@ After every non-obvious debugging session, write one short note. This is what ma
 faster than month one, and it is the first thing dropped under time pressure. Keep the notes in one
 directory with an index of one line each, appended in the same commit as the note.
 
-```markdown
----
-title: <symptom in one line, in the words you would grep for>
-area: numerics | perf | packaging | infra | merge
----
+`templates/finding-note.md` is the format. Six sections: Symptom, Mechanism, Detection, Fix, Guard,
+Generalization. The last one is the reason the note is worth writing, and it is the one that gets
+dropped. Fill it in even when the answer is "no wider class, this was specific".
 
-**Symptom.** What was observed, with the number or the error string.
-**Mechanism.** Why, at the level of the real system: which op, which layout, which ref, which
-process. Not "a race", but which two writers and which file.
-**Detection.** The command that separates this from its look-alikes. Name the look-alike.
-**Fix.** What changed, at which path, with the measurement after.
-**Guard.** The test, assert or default that stops it recurring, and where it lives. If there is no
-guard, say so: that is the open item.
-```
+Two of the six are worth spelling out because they are usually written too vaguely to use.
+**Mechanism** means at the level of the real system: which op, which layout, which reference, which
+process. Not "a race", but which two writers and which file. **Detection** means the command that
+separates this from its look-alikes, and it should name the look-alike.
 
 Two rules that keep the collection useful:
 

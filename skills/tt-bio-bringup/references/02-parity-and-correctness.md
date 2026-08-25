@@ -20,8 +20,11 @@ device run. Not a "reference" produced by a script that imports your ttnn module
 file. Not a cloud GPU run you cannot reproduce.
 
 No GPU is needed. A CPU reference fold of a 100-300 residue target is minutes to a few hours, paid once per
-fixture. Reference implementations are hardware-invariant in practice: a CPU-vs-GPU check of the same reference
-code at one seed lands inside the CPU-vs-CPU self-spread, so CPU fixtures represent what a GPU user sees.
+fixture. For a **deterministic** reference, CPU fixtures represent what a GPU user sees: same code, same
+weights, same inputs, and the CPU-vs-GPU difference is float-association noise. For a **stochastic**
+one they do not, and the reason is in §8: `torch.randn(device='cuda')` draws from Philox and CPU from
+MT19937, so the two are independent noise realizations, not a small numerical difference. Seed and
+compare on one device, or share the draws explicitly.
 
 ### 1.2 Capture protocol
 

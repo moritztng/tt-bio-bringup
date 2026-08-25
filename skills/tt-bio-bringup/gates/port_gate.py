@@ -303,12 +303,19 @@ def gate_report(args) -> int:
         body = _section(text, want)
         if body is None:
             continue                              # already reported as a missing heading
-        filled = [tb for tb in parse_tables(strip_code_blocks(body)) if tb.rows]
-        if not filled:
+        stripped = strip_code_blocks(body)
+        content = [l for l in stripped.splitlines()
+                   if l.strip() and not l.startswith("#")
+                   and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
+        if not content:
+            problems.append(f"{path}: {want!r} is a heading with nothing under it.")
+            continue
+        if args.no_tables:
+            continue                              # this document is prose, --no-tables said so
+        if not [tb for tb in parse_tables(stripped) if tb.rows]:
             problems.append(
                 f"{path}: {want!r} has no table with data rows under it. The heading is not the "
-                "evidence; the rows are. If this section is genuinely empty, say why in it and "
-                "drop it from --require-heading.")
+                "evidence; the rows are. If this section is genuinely prose, pass --no-tables.")
     return _verdict("report", path, problems)
 
 
