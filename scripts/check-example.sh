@@ -168,6 +168,21 @@ check "every table the example puts under a heading Phase 3 judges" 0 "$TMP/pari
       report "$TMP/parity_all.md" --require-heading "Component parity" \
       --require-heading "Negative controls"
 
+# 1d. EVERY table in the document, heading or no heading. Blocks 1, 2 and 3 pull tables by
+#     header string, and 1c fixed that for the two Phase 3 headings only, which left the same
+#     hole open under Phase 0 and Phase 5: a second table planted after the Levers table left all
+#     of these checks green because none of them extracts it. This block does not name anything.
+#     It cannot judge which heading a table sits under, so it catches the content defects
+#     (blank cell, TBD, "lots", a short row, a verdict that says the control did not fire) and
+#     leaves the heading-sensitive ones to the blocks above.
+{
+    echo "# Every table in the worked example"
+    echo; echo "## Tables"; echo
+    awk '/^```/ { fence = !fence; next } fence { next } /\|/ && !/^ *#/ { print }' "$EX"
+} > "$TMP/alltables.md"
+check "every table in the example, extracted by nothing but a pipe" 0 "$TMP/alltables.md" \
+      report "$TMP/alltables.md" --require-heading "Tables"
+
 # 2. The Phase 3 component-parity table, under the headings the Phase 3 gate requires.
 {
     echo "# Parity report: minifold"

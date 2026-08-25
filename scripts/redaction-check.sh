@@ -15,8 +15,19 @@ set -u
 # and every org-specific pattern was dropped with no message. The run printed "clean" and
 # exited 0 having never scanned for a single hostname or staff name. That is this script's own
 # headline defect, in this script.
-SELFDIR="$(cd "$(dirname "$0")" && pwd)" || exit 2
+# readlink -f, because $0 through a symlink is the LINK's directory: `ln -s .../redaction-check.sh
+# ~/bin/rc.sh && rc.sh` cd'd to ~/, scanned an unrelated tree, and printed "clean (1 files)".
+SELF="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+SELFDIR="$(cd "$(dirname "$SELF")" && pwd)" || exit 2
 cd "$SELFDIR/.." || exit 2
+# And prove the cd landed where this script lives, rather than trusting the arithmetic above.
+# A scan of the wrong tree is the one failure this script cannot report, because everything it
+# looks at comes from the tree it landed in.
+[ -f scripts/redaction-check.sh ] || {
+  echo "FATAL: cd landed in $(pwd), which has no scripts/redaction-check.sh. Refusing to scan a" >&2
+  echo "tree that is not this repo: a clean verdict over the wrong files is worse than no run." >&2
+  exit 2
+}
 
 # Every pattern below is PCRE (lookahead exclusions). A grep without -P does not narrow the
 # scan, it empties it: each invocation exits 2, the hit list is empty, and this script prints
@@ -70,8 +81,8 @@ PATTERNS=(
   # The assigned form above needs 8+ characters after the '=', so it reads "API_KEY=xyz" as a
   # placeholder and stays quiet. The word itself is what the brief names, and it appears nowhere
   # in this repo, so match it bare and let a human judge the hit.
-  'the words api key|api[_-]?key'
-  'personal messaging|\btelegram\b|\bwhatsapp\b|\bsignal\.me\b'
+  'the words api key|api[_ -]?key'
+  'personal messaging|\btelegram\b|\bt\.me/|\bwhatsapp\b|\bsignal\.me\b'
   'private ipv4|\b(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'tailnet ipv4|\b100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'mac address|\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b'
@@ -86,7 +97,7 @@ PATTERNS=(
   # them bare would fire on 15 tracked files and train a reader to ignore every hit. The money
   # arm therefore needs a currency within 24 characters of the word, and the plural forms the
   # earlier version missed are in: "3 FTEs" and "budget: 40k dollars" both scanned clean.
-  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ ?(FTEs?|engineers?)\b|\bbudget(ed|s)?\b[^.\n]{0,24}(\$|\bUSD\b|\bEUR\b|dollars|euros)|[0-9]+ ?(k|m) ?(dollars|euros|usd|eur)\b'
+  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ ?(FTEs?|engineers?)\b|\bbudget(ed|s)?\b[^.\n]{0,24}(\$|£|\bUSD\b|\bEUR\b|\bGBP\b|dollars|euros|pounds|\bmillion\b)|[0-9]+ ?(k|m) ?(dollars|euros|pounds|usd|eur|gbp)\b|\b(GBP|USD|EUR) ?[0-9]'
   # The assigned form needs 8+ characters after the '=', so "password: hunter2" was a placeholder
   # to it, and the prose form has no '=' at all.
   'secret in prose|\b(password|passwd|passphrase|api key|secret|credential)s?\b[[:space:]]+(is|was|are|were)[[:space:]]+\S{4,}'
@@ -152,7 +163,7 @@ for entry in "${PATTERNS[@]}"; do
               sed -e 's|github\.com/moritztng|ALLOWED|gI' \
                   -e 's|git@github\.com|ALLOWED|gI' \
                   -e 's|example\.com|ALLOWED|gI' -- "$f" 2>/dev/null \
-                | grep -anPi -- "$rx" 2>/dev/null | awk -v f="$f" '{ print f ":" $0 }'
+                | grep -anPi -- "$rx" 2>/dev/null | f="$f" awk '{ print ENVIRON["f"] ":" $0 }'
             done < "$FILELIST"
             grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
               | tr '\0' '\n' \

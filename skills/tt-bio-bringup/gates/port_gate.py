@@ -55,7 +55,7 @@ DEFERRED_SOFT = re.compile(
 #: A cell that says nothing. "lots", "some", "a few": not a value.
 VAGUE_CELL = re.compile(
     r"^(n/?a|_+|lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
-    r"|maybe|probably|roughly|approx|\?+|[-\u2010-\u2015]+|\.+|etc\.?|see above|as needed"
+    r"|maybe|probably|roughly|approx|\?+|[-\u2010-\u2015\u2212]+|\.+|etc\.?|see above|as needed"
     r"|standard|default)$", re.I)
 #: The escape hatch. A blank cell is indistinguishable from an unfinished one, so it stays a
 #: failure, but "nothing here yet" is a real answer in early phases and needs a way to be said.
@@ -93,25 +93,43 @@ AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed
 #: and "yes, went from pass to fail" are answers, and a substring scan rejected both.
 NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)?|green|"
                               r"unknown|n/?a|none)$", re.I)
-#: A negation anywhere in the cell, not only as a clause of its own. "yes, still green" and
-#: "confirmed: the test did not notice" both say the control did not fire.
-#: Enumerating phrases is a losing game, so the "did not fire" shapes are matched by their
-#: grammar: any of still/stayed/remained/was/kept in front of green or passing. "yes, the gate
-#: remained green" was an affirmative with a report of failure inside it and it passed.
-#: "already red" is the other direction: a control that was red before the break proves nothing.
-NEGATION_ANYWHERE = re.compile(
+#: Two lists, because one list cannot be both. Enumerating phrases was a losing game in both
+#: directions: adding "was green" to catch "yes, the gate was green" also rejected the honest
+#: "yes, red. Before the break it was green", which is a BETTER negative control than a bare yes.
+#:
+#: HARD is unconditional. No honest report of a control firing contains these, whatever else it
+#: says. "already red" is here for the other direction: a control that was red before the break
+#: proves nothing about the break.
+NEGATION_HARD = re.compile(
     r"\b(?:"
-    r"(?:still|stayed|remain(?:s|ed)?|was|were|is|are|kept|continued)\s+"
-    r"(?:green|passing|to\s+pass|the\s+same)"
+    r"(?:still|stayed|remain(?:s|ed)?|kept|continued)\s+(?:green|passing|to\s+pass|the\s+same)"
     r"|did ?n[o']?t|does ?n[o']?t|never"
     r"|no change|unchanged|no (?:effect|difference|impact)|nothing to report"
-    r"|passed anyway|still pass(?:ed|es)?"
+    r"|passed anyway|still pass(?:es|ed)?"
     r"|already (?:red|failing|broken|fail(?:ing|ed))"
     r")\b", re.I)
+#: SOFT reports a not-fired state, which is fine ONLY if the cell also reports a fired one. That
+#: is what tells "the check was passing at 0.99 and dropped to 0.31" from "the gate passes".
+NEGATION_SOFT = re.compile(
+    r"\b(?:"
+    r"(?:was|were|is|are)\s+(?:green|passing|identical|the\s+same|fine|ok|clean)"
+    r"|(?:output|result)s?\b.{0,16}\bidentical"
+    r"|exit (?:code|status) (?:was |of )?0\b"
+    r"|(?:gate|check|test|control|it|they)\s+pass(?:es|ed)\b"
+    r"|held (?:at|steady)|held\b.{0,12}\bunchanged"
+    r")\b", re.I)
+#: Evidence that something DID move. A bare "red" counts, which is why "already red" has to be
+#: matched as HARD first: otherwise it would supply its own alibi.
+FIRED_EVIDENCE = re.compile(
+    r"\b(?:red|went red|turned red|dropped|fell|drops?|collaps(?:ed|es)|diverged|"
+    r"fail(?:s|ed|ure)?|jumped|rose|spiked|blew up|caught|maxdiff|nan|inf|"
+    r"assertion|error|to fail)\b", re.I)
 
 
 def negated(cell: str) -> bool:
-    if NEGATION_ANYWHERE.search(cell):
+    if NEGATION_HARD.search(cell):
+        return True
+    if NEGATION_SOFT.search(cell) and not FIRED_EVIDENCE.search(cell):
         return True
     return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!:")) for c in re.split(r"[,;:()]", cell))
 #: A threshold is a number, or a named exactness criterion.
@@ -305,7 +323,8 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 raw = cell.strip()
                 # Zero-width space, word joiner and BOM are invisible to a reader and were a
                 # filled value to this check: a cell holding only U+200B passed.
-                v = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff]", "", raw).strip("*`").strip()
+                v = re.sub(r"[\u00ad\u200b\u200c\u200d\u2060\ufeff]|<!--.*?-->|&nbsp;",
+                           "", raw, flags=re.I | re.S).strip("*`").strip()
                 # A cell holding only decoration is a blank cell wearing a disguise: stripping
                 # `*` and backticks left nothing, and every check below is guarded on `v`.
                 if raw and not v:
@@ -398,10 +417,21 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     # the bullet read as answered. Every doc in this repo writes labels that way. Trailing
     # emphasis, backticks and zero-width characters are stripped before matching.
     def _bare(line: str) -> str:
-        return re.sub(r"[*_`\u200b\u2060\ufeff\s]+$", "", line)
+        # An HTML comment and an &nbsp; render as nothing, so a bullet "answered" with either is
+        # blank on the page. The comment strip further down runs too late to help here, and the
+        # dash class below was ASCII plus two of the six unicode dashes: U+00AD renders as
+        # nothing at all and U+2212 renders exactly like a hyphen.
+        line = re.sub(r"<!--.*?-->", "", line, flags=re.S)
+        line = re.sub(r"&nbsp;|&#160;|&#xa0;", "", line, flags=re.I)
+        # Emphasis is stripped EVERYWHERE, not only at end of line. With a bold label the closing
+        # ** sits between the colon and the answer ("- **Commit:** \u2015"), so a trailing-only
+        # strip left a '*' where the match needed whitespace and the bullet read as answered.
+        line = re.sub(r"[*`]", "", line)
+        return re.sub(r"[_\u00ad\u200b-\u200d\u2060\ufeff\s]+$", "", line)
 
     empty = [l.strip() for l in bullets
-             if re.match(r"\s*[-*]\s+.*:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", _bare(l))]
+             if re.match(r"\s*[-*]\s+.*:\s*([-_.\u00ad\u2010-\u2015\u2212]+|\.{2,})?\s*$",
+                         _bare(l))]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")
