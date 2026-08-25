@@ -47,7 +47,7 @@ PATTERNS=(
   'tailnet ipv4|\b100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'mac address|\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b'
   'home path|/home/[a-z][a-z0-9_-]*/|/Users/[a-z][a-z0-9_-]*/'
-  'agent state dir|\.coworker|\.claude/(?!skills|agents|plugins)|\.ssh/|/dev/tenstorrent/[0-9]+[[:space:]]*#'
+  'agent or private state dir|\.claude/(?!skills|agents|plugins)|\.ssh/|\.aws/|\.gnupg/|\.kube/|\.netrc|/dev/tenstorrent/[0-9]+[[:space:]]*#'
   'internal host|\.local\b|\bbmc\b|\bilo\b|\bidrac\b'
   'email address|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   'non-public git remote|git@(?!github\.com)[a-z0-9][a-z0-9.-]*[:/]|\b(gitlab|bitbucket)\.[a-z]|\bgit\+ssh://'
