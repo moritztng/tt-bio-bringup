@@ -47,8 +47,8 @@ long list of ways a port silently goes wrong while every test stays green.
 
 ## Install
 
-Two ways. The plugin gets you the skill and all five subagents in one command; the symlink gets you
-the skill only.
+Two ways. The plugin is one command and picks up the subagents by itself; the symlink needs a second
+line to copy them, because only the plugin path scans `agents/`.
 
 **As a plugin**, from inside Claude Code:
 
@@ -98,8 +98,8 @@ the workflow reads `$SKILL`.
 ## Using it
 
 First get to the starting line: fork and install tt-bio, check the cards answer, run its test suite,
-fold one existing model. That is `references/01-orientation.md`, "Day zero". Everything from Phase 2 on is
-uninterpretable until one existing model folds on your card, so do not skip it. You do not have to
+fold one existing model. That is `references/01-orientation.md`, "Day zero". Everything from Phase 2
+on is uninterpretable until one existing model folds on your card, so do not skip it. You do not have to
 wait for it either: Phase 0 and Phase 1 need torch and nothing else, so if the hardware is still in
 a box, start Phase 0 today and do day zero alongside it.
 
@@ -117,13 +117,16 @@ you would rather see it than read about it.
 Three things to hold Claude to:
 
 1. **No phase starts before the previous gate exits 0**, and a gate is a command you can run, not a
-   summary paragraph. All eight are commands, and five of them call `scripts/port_gate.py`, the copy you make in your fork.
+   summary paragraph. All eight are commands, and five of them call `scripts/port_gate.py`, the copy
+   you make in your fork.
 2. **No performance number without a matched-protocol A/B**: same shapes, same batch, same warm
-   state, same card, repeated runs, and the statistic named. Median for symmetric noise, **min** when
-   the noise is one-sided, which host contention is (`05-perf-method-and-roofline.md` §11).
+   state, same card, repeated runs, and the statistic named. Median for symmetric noise, **min**
+   when the noise is one-sided, which host contention is (`05-perf-method-and-roofline.md` §11).
 3. **Break every green check once** to prove it can go red. A test that cannot fail is not evidence.
-   `port_gate.py prove-red --check ... --break ... --restore ...` does the whole sequence and reads
-   the exit codes for you, so this costs one command rather than a decision.
+   `port_gate.py prove-red --check ... --break ... --restore ... --expect-change <file>` runs the
+   whole sequence and reads the exit codes for you, so this costs one command rather than a
+   decision. It refuses without `--expect-change`, because a break that edited nothing looks
+   exactly like a gate that is decoration.
 
 ## Scope
 
