@@ -219,7 +219,7 @@ blocks.0 mask is a tensor: True
 captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
 blocks.0 kwargs captured: ['mask']
 blocks.0 mask is a tensor: True
-  same     scripts/minifold_port/parity_artifacts/minifold_117.pt  53fe30714e9ae0f3  53fe30714e9ae0f3
+  same     scripts/minifold_port/parity_artifacts/minifold_117.pt  8bab5e05b90a6794  8bab5e05b90a6794
 GATE 0: 1 artifact(s) byte-identical across two runs.
 ```
 
@@ -237,7 +237,7 @@ two runs on one machine agree.
 which is what a rushed capture actually forgets:
 
 ```
-  DIFFERS  scripts/minifold_port/parity_artifacts/minifold_117.pt  a026a45ffe346cbc  87f8e5cbe5636531
+  DIFFERS  scripts/minifold_port/parity_artifacts/minifold_117.pt  fbb3274da9b0deb2  7a0d00154cea94be
 GATE 1: 1 artifact(s) changed between two identical runs. Pin the seeds, the thread count and the
 iteration order before going on: a golden you cannot reproduce cannot prove anything later.
 ```
@@ -251,10 +251,31 @@ The `.meta.json` beside the fixture is deliberately not in the artifact list. It
 which is a measurement and differs between runs of a real reference, so hashing it would fail the
 gate for a reason that is not a defect.
 
-**Then measure the thresholds.** Run the same graph in torch at bf16 storage with fp32 accumulation
-and record, per module, how far bf16 lands from fp32. That envelope is the gate, and it replaces the
-guesses in the Phase 0 table. A module whose bf16 self-error is 4e-3 cannot be held to 1e-4 no matter
-how good the port is, and holding it to 1e-2 passes a real bug.
+**Then measure the thresholds.** Replay each captured module through the reference under
+`torch.autocast("cpu", bfloat16)` and compare against the fp32 output already in the fixture. That
+distance is the module's envelope, and it replaces the Phase 0 guess. The recipe is
+`02-parity-and-correctness.md` §3.4; **these numbers are real**, measured on this example:
+
+| Module | Envelope PCC | Maxdiff | Phase 0 guess | Gate becomes |
+|---|---|---|---|---|
+| `embed` | 1.000000 | 0.000e+00 | maxdiff 0 | maxdiff 0, the guess was right |
+| `blocks.0.norm1` | 1.000000 | 0.000e+00 | PCC >= 0.9999 | **maxdiff 0**, stronger than the guess |
+| `blocks.0.attn` | 0.999988 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.999988 |
+| `blocks.0.ffn` | 0.999991 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.999991 |
+| `blocks.0` | 1.000000 | 5.029e-03 | PCC >= 0.999 | maxdiff <= 5.0e-03 |
+| `head.proj` | 0.999996 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.999996 |
+| `head.out` | 0.999992 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.999992 |
+| `<root>` | 0.999985 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.999985 |
+
+Read the second row. The guess was PCC >= 0.9999 and the truth is that a LayerNorm is **bf16-exact
+here**: its envelope is maxdiff 0, so the gate should be bit-equality and a PCC threshold would let a
+real regression through. Every guess in the Phase 0 table was too loose, which is the direction
+guesses go. A module whose bf16 self-error is 4e-3 cannot be held to 1e-4 no matter how good the
+port is, and holding it to 1e-2 passes a real bug.
+
+One trap, and it cost this example a run: replay through the reference **with the weights the capture
+used**. Re-instantiating the model with a different seed gives you PCC around zero and looks like a
+catastrophic numerical failure when it is two different models.
 
 ---
 

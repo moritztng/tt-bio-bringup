@@ -38,7 +38,11 @@ import numpy as np, torch
 def _to_cpu(x):
     """Recurse into every container the reference might return. Leaves stay leaves."""
     if torch.is_tensor(x):
-        return x.detach().to(torch.float32).cpu()
+        x = x.detach().cpu()
+        # fp32 for the float leaves, so a bf16 reference does not bake its own rounding into the
+        # golden. Integer and bool leaves keep their dtype: token ids and masks are indices, and
+        # a float index cannot be replayed through the module it came from.
+        return x.to(torch.float32) if x.is_floating_point() else x
     if isinstance(x, dict):
         return {k: _to_cpu(v) for k, v in x.items()}
     if isinstance(x, tuple) and hasattr(x, "_fields"):
@@ -269,6 +273,37 @@ alongside these: per-op ~0.99 here against ~0.999 there, and the tighter one is 
 for a single bio op. Full dense decoder stacks
 0.94-0.999, degrading with depth (32-layer models accepted at 0.60); MoE 0.86-0.96; encoder-decoder 0.90-0.97;
 vision components 0.75-0.79. For a folding model, per-module 0.98-0.99 on real captured inputs is the bar.
+
+**Per module, measure the envelope rather than guessing.** This is the number Phase 1 replaces the
+plan's first-guess thresholds with, and it needs no device: the whole thing runs in torch on CPU
+against the fixture you already captured.
+
+```python
+# Same module, same captured inputs, two torch precisions. No ttnn, no card.
+golden = torch.load(fixture, weights_only=False)
+args   = golden[f"{name}/args"]; kwargs = golden[f"{name}/kwargs"]
+ref32  = golden[f"{name}/out"]                                 # captured in fp32
+
+with torch.autocast("cpu", dtype=torch.bfloat16):
+    ref16 = mod(*args, **kwargs)
+
+envelope = pcc(ref16.float(), ref32)     # how far bf16 alone moves this module
+```
+
+Load the reference with the **weights the capture used**, not a fresh instantiation: different
+weights give a PCC near zero that reads as a catastrophic numerical failure and is two different
+models. `envelope` is then the module's threshold, not a band you chose. A module whose own bf16 recompute lands
+at 0.9993 cannot be held to 0.9999 by any port, and holding it to 0.99 passes a real bug. Record the
+measured value in the plan's Parity threshold column, replacing the guess, and record the fp32
+reference value beside it so the next reader can tell a tightening from a typo. Two cases to expect:
+a module that comes back at exactly 1.0 is bf16-exact and its gate is maxdiff 0, not a PCC; a module
+whose envelope is worse than the band in `03-precision-and-numerics.md` §7 is telling you the module
+is numerically fragile before you have written a line of device code, which is worth knowing in
+Phase 1 rather than Phase 3.
+
+Add `margin` on top only for the device-vs-torch bf16 accumulation difference, the same way the
+end-to-end envelope below does, and derive it from your own clean legs rather than inheriting a
+number.
 
 For end-to-end structure output, do not pick a number, **measure the envelope**. A diffusion model is a
 deterministic function of its input noise, so run three closed-loop folds on byte-identical noise:

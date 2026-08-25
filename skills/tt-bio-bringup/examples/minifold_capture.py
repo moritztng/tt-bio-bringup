@@ -103,7 +103,11 @@ class MiniFold(nn.Module):
 def to_cpu(x):
     """Recurse into every container the reference might return. Leaves stay leaves."""
     if torch.is_tensor(x):
-        return x.detach().to(torch.float32).cpu()
+        x = x.detach().cpu()
+        # fp32 for the float leaves, so a bf16 reference does not bake its own rounding into the
+        # golden. Integer and bool leaves keep their dtype: token ids and masks are indices, and
+        # a float index cannot be replayed through the module it came from.
+        return x.to(torch.float32) if x.is_floating_point() else x
     if isinstance(x, dict):
         return {k: to_cpu(v) for k, v in x.items()}
     if isinstance(x, tuple) and hasattr(x, "_fields"):
