@@ -69,8 +69,12 @@ GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
 GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+"
                            r"|(tbd|todo|not|to|ask|later|unknown|maybe|decide|pick)/.*"
                            r"|.*/(yet|decided|known|later|tbd|todo|someone|author)(/.*)?)$", re.I)
-#: Columns whose whole purpose is to record that something failed on purpose.
-MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
+#: Columns whose whole purpose is to record that something failed on purpose. Matched by NAME
+#: only. Position is not a fallback: taking the last column meant renaming the verdict header
+#: pointed the check at whatever came last, which both passed a table saying every control stayed
+#: green and rejected an honest one that had a Notes column after the verdict.
+MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails?\?|did it fail|detected\?|fired\?|"
+                         r"caught\?|verdict", re.I)
 #: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
 #: a PREFIX, so "yes - red at 0.712" and "red on commit abc123" are answers, not violations.
 AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed)( as expected)?)\b",
@@ -221,6 +225,12 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
         problems.append(f"{path}: no filled table anywhere, so nothing here is a record of anything")
     for t in tables:
         in_controls_section = "negative control" in section_of.get(t.line_no, "")
+        if in_controls_section and t.rows and not any(MUST_BE_YES.search(h) for h in t.header):
+            problems.append(
+                f"{path}:{t.line_no}: the table under Negative controls has no column this gate "
+                f"can read as the verdict. Headers are [{' | '.join(t.header)}]. Name one of them "
+                "'Went red?', or 'Detected?', or 'Verdict'. Guessing by position is how a table "
+                "saying every control stayed green got certified.")
         if not t.rows:
             problems.append(
                 f"{path}:{t.line_no}: table [{' | '.join(t.header)}] has no data rows. If it is "
@@ -247,8 +257,7 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                                     "answer. A cell that survives stripping as empty is empty.")
                     continue
                 # Which cell carries the verdict, decided before any escape hatch applies.
-                is_verdict = bool(MUST_BE_YES.search(col)) or (
-                    in_controls_section and i == len(t.header) - 1)
+                is_verdict = bool(MUST_BE_YES.search(col))
                 # "none yet" is an answer in most columns and never in this one: a control you
                 # have not run yet is the thing the column exists to make visible. This has to be
                 # tested after is_verdict, or renaming the column re-opens the escape.
@@ -488,7 +497,6 @@ def _sha(path: Path) -> str:
 
 def gate_determinism(args) -> int:
     artifacts = [Path(a) for a in args.artifact]
-    runs: list[dict[Path, str]] = []
     for a in artifacts:
         if a.is_dir():
             print(f"GATE 2: {a} is a directory. --artifact takes the file whose bytes must match.")
@@ -510,6 +518,14 @@ def gate_determinism(args) -> int:
     for a in artifacts:
         if a.is_file():
             keep = a.with_suffix(a.suffix + ".determinism-backup")
+            if keep.exists():
+                # Never overwrite a backup. One already here means a previous run was interrupted
+                # and that file, not this one, is the golden.
+                print(f"GATE 2: {keep} already exists, so a previous run of this gate did not "
+                      "finish. That file is your artifact from before that run; this one is "
+                      "whatever the interrupted run left. Decide which you want, remove the "
+                      "backup, and re-run.")
+                return 2
             a.replace(keep)
             stash[a] = keep
 
@@ -528,6 +544,19 @@ def gate_determinism(args) -> int:
                 a.unlink()                     # whatever the failed run left is not the golden
             keep.replace(a)
 
+    try:
+        return _determinism_runs(args, artifacts, stash, _restore_stash)
+    except BaseException:
+        # Ctrl-C during a capture that takes thousands of seconds used to leave the artifact
+        # hidden under a .determinism-backup and say nothing, and the next run then stashed the
+        # fresh file over it and deleted it on success.
+        _restore_stash()
+        print("\nInterrupted. Any artifact that existed before this run has been put back.")
+        raise
+
+
+def _determinism_runs(args, artifacts, stash, _restore_stash) -> int:
+    runs: list[dict[Path, str]] = []
     for attempt in (1, 2):
         for a in artifacts:
             if a.is_file():
@@ -645,10 +674,27 @@ def gate_prove_red(args) -> int:
     was = _fingerprint(watched)
     check_paths = [q for q in _paths_in(args.check) if q not in {str(Path(w)) for w in watched}]
     check_before = _fingerprint(check_paths)
+    def _bail(msg: str) -> int:
+        """Refuse, but put the tree back first. Three of these used to return without running
+        --restore, so a break that edited the file and then exited non-zero left the fault in
+        place under a message saying nothing had been injected."""
+        print(msg)
+        print(f"--- restore: {args.restore}")
+        rc = _sh(args.restore)
+        after = _fingerprint(watched)
+        dirty = [q for q in watched if was.get(q) != after.get(q)]
+        if rc != 0 or dirty:
+            print(f"  and the restore left the tree dirty (exit {rc}"
+                  + (f", {', '.join(dirty)} still differs" if dirty else "")
+                  + "). Check it by hand before running anything else.")
+        else:
+            print("  the tree is back as it was.")
+        return 2
+
     print(f"--- break it: {getattr(args, 'break')}")
     if _sh(getattr(args, "break")) != 0:
-        print("GATE 2: the break command itself failed, so the fault was never injected.")
-        return 2
+        return _bail("GATE 2: the break command exited non-zero. Whatever it did or did not "
+                     "inject, this run says nothing about the check.")
 
     # An exit code is not an edit. `sed -i s/pattern/x/` exits 0 when the pattern does not
     # match, and a stale break command is the usual reason this check reads backwards: nothing
@@ -657,20 +703,23 @@ def gate_prove_red(args) -> int:
         now = _fingerprint(watched)
         unchanged = [q for q in watched if was[q] == now[q]]
         if unchanged:
-            print(f"GATE 2: the break command exited 0 but did not change "
-                  f"{', '.join(unchanged)}. Nothing was injected, so this run says nothing about "
-                  "the check. Usually the pattern no longer matches the file.")
-            return 2
+            changed = [q for q in watched if q not in unchanged]
+            return _bail(
+                f"GATE 2: the break command exited 0 but did not change "
+                f"{', '.join(unchanged)}. Usually the pattern no longer matches the file."
+                + (f" It did change {', '.join(changed)}, so something was injected and this run "
+                   "still says nothing about the check." if changed
+                   else " Nothing was injected."))
     # Deleting the thing under test is not injecting a fault into it. The fingerprint above
     # counts a vanished file as "changed", which is true and useless: the check then fails
     # because there is nothing to check.
     if watched:
         gone = [q for q in watched if was[q] is not None and not Path(q).is_file()]
         if gone:
-            print(f"GATE 2: the break removed {', '.join(gone)} rather than changing it. A check "
-                  "that fails because the file is missing has not been shown to fail on a defect. "
-                  "Edit the file, do not move it.")
-            return 2
+            return _bail(
+                f"GATE 2: the break removed {', '.join(gone)} rather than changing it, so it is "
+                "not on disk right now. A check that fails because the file is missing has not "
+                "been shown to fail on a defect. Edit the file, do not move it.")
 
     # A file the check reads, changed by the break, and not declared.
     moved = [q for q in check_paths if _fingerprint([q])[q] != check_before[q]]

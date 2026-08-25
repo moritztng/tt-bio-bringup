@@ -79,6 +79,18 @@ if [ -f "$LOCAL" ]; then
   while IFS= read -r line; do
     line=${line%%#*}; line=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
     [ -z "$line" ] && continue
+    # Validate it. An invalid PCRE makes grep error on every file, the error goes to /dev/null,
+    # the pattern matches nothing, and the run still says clean. That is the whole failure this
+    # script exists to prevent, arriving through the file the reader is told to write.
+    if ! printf 'x\n' | grep -qPi -- "$line" 2>/dev/null && \
+       ! printf 'x\n' | grep -vqPi -- "$line" 2>/dev/null; then
+      echo "FATAL: $(basename "$LOCAL") line $((n + 1)) is not a valid pattern:" >&2
+      printf '  %s\n' "$line" >&2
+      printf '%s\n' "$(printf 'x\n' | grep -Pi -- "$line" 2>&1 >/dev/null | head -1)" >&2
+      echo "  Fix it or remove it. A pattern that cannot compile catches nothing and this" >&2
+      echo "  script would otherwise report clean." >&2
+      exit 2
+    fi
     PATTERNS+=("local denylist|$line"); n=$((n + 1))
   done < "$LOCAL"
   echo "loaded $n local pattern(s) from $(basename "$LOCAL")"
