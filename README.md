@@ -85,22 +85,30 @@ find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name refer
 
 ## Using it
 
-In your tt-bio fork, with the skill installed:
+First get to the starting line: fork and install tt-bio, check the cards answer, run its test suite,
+fold one existing model. That is `references/01-orientation.md`, "Day zero", six commands. Do not skip
+it: everything after it is uninterpretable until one existing model folds on your card.
+
+Then, in your fork:
 
 ```
 Port the model in ./reference_impl to Tenstorrent. Start at Phase 0 of the tt-bio-bringup skill.
 ```
 
-Claude reads `SKILL.md`, writes `PORT_PLAN.md`, and works the phases. Each phase names the reference
-documents to read before starting it, so context stays small until it is needed.
+Claude reads `SKILL.md`, writes `notes/PORT_PLAN.md`, and works the phases. Each phase names the
+reference documents to read before starting it, so context stays small until it is needed.
+`examples/worked-example.md` shows the whole thing done on a small model if you would rather see it
+than read about it.
 
 Three things to hold Claude to, because they are what make the difference:
 
-1. **No phase starts before the previous gate is green**, and a gate is a command you can run, not a
-   summary paragraph.
+1. **No phase starts before the previous gate exits 0**, and a gate is a command you can run, not a
+   summary paragraph. All eight are commands, and four of them are `gates/port_gate.py`.
 2. **No performance number without a matched-protocol A/B**: same shapes, same batch, same warm
    state, same card, repeated runs, median reported.
 3. **Break every green check once** to prove it can go red. A test that cannot fail is not evidence.
+   `port_gate.py prove-red --check ... --break ... --restore ...` does the whole sequence and reads
+   the exit codes for you, so this costs one command rather than a decision.
 
 ## Scope
 
