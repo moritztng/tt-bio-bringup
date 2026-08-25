@@ -163,8 +163,8 @@ reduction axis: bf16/fp32 accumulation order changes even with exact zeros.
 Padding an axis helps only if that axis is what a program's shape keys on, and often it is not.
 - **Windowed attention.** A model that reshapes to `(B, n_windows, WINDOW, -1)` **before** the encoder has folded
   the window index into the batch dim: one dispatched program already covers all windows regardless of how many
-  are real. Bucketing 3584 -> 2560 on that axis removed **zero** programs on a dispatch-bound model and only made
-  the tensors bigger.
+  are real. Bucketing that axis up to a fixed 3584 from a real 2560 removed **zero** programs on a
+  dispatch-bound model and made every tensor 1.4x bigger for nothing.
 - **Per-sample-shaped ops.** With best-of-N batched as B=N, the pair state replicates to `[N,L,L,c]` in both
   sampler and confidence head, so the effective shape varies with N inside a fixed token bucket: the bucket neither
   stabilises the program set nor bounds memory.

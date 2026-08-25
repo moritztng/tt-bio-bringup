@@ -62,8 +62,8 @@ Per op type, record: **total device time, call count, mean per call, share of th
 Rules that make a census trustworthy:
 
 - **Profile the production call site, not a generic stand-in.** One census under-reported a
-  contraction 2.28x by timing `ttnn.matmul` with no program config while production ran with one
-  (17.83 vs 39.5-40.1 TFLOP/s). Whatever `program_config`, `memory_config` or fidelity the model
+  contraction **2.2x** by timing `ttnn.matmul` with no program config while production ran with one
+  (17.83 vs 39.5-40.1 TFLOP/s, so 2.22x to 2.25x). Whatever `program_config`, `memory_config` or fidelity the model
   passes, the census passes too.
 - **Segment one-time from per-step cost before quoting any percentage.** Run at `n1` and `n2` steps:
   `per_step = (t2 - t1) / (n2 - n1)`, `one_time = t1 - n1 * per_step`. Getting this wrong was ~2x off

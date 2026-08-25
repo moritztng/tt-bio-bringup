@@ -135,6 +135,29 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
       report "$TMP/state.md" --no-tables --require-heading "Environment" \
       --require-heading "Decisions taken"
 
+# 1c. Every table the example shows under a heading a gate judges, not only the nine this script
+#     extracts by key. A different table under ## Negative controls was invisible to all of the
+#     checks above: they pull tables the script names, and the gate never saw the rest.
+{
+    echo "# Parity report: minifold"
+    echo; echo "## Component parity"; echo
+    need_table "Threshold (measured bf16 envelope)"
+    echo; echo "## Negative controls"; echo
+    # Every table row from the Negative controls paragraph until the next heading. Stopping at a
+    # blank line would collect only the first table, which is how a planted second one stayed
+    # invisible: the point of this block is that it does not choose.
+    awk '
+        /^```/ { fence = !fence; next }
+        fence { next }
+        /^\*\*Negative controls\*\*/ { on = 1; next }
+        on && /^#/ { exit }
+        on && /^\|/ { print }
+    ' "$EX"
+} > "$TMP/parity_all.md"
+check "every table the example puts under Negative controls" 0 "$TMP/parity_all.md" \
+      report "$TMP/parity_all.md" --require-heading "Component parity" \
+      --require-heading "Negative controls"
+
 # 2. The Phase 3 component-parity table, under the headings the Phase 3 gate requires.
 {
     echo "# Parity report: minifold"
@@ -241,6 +264,28 @@ else
     fail=1
 fi
 
+# The GATE 0 lines the example pastes, too. Only the GATE 1 block was compared, so a verdict
+# message the tool cannot produce sat in the example for as long as it took someone to notice.
+for want in "$(printf '%s\n' "GATE 0: phase 0 plan")" "$(printf '%s\n' "GATE 0: report")"; do
+    "$PY" - "$EX" "$want" <<'PYEOF' || fail=1
+import re, sys
+doc = open(sys.argv[1]).read()
+prefix = sys.argv[2]
+# the tool's own wording, from the source, so this cannot drift silently
+src = open("skills/tt-bio-bringup/gates/port_gate.py").read()
+m = re.search(r'"GATE 0: \{what\} \{path\} ([^"]*)"', src)
+phrase = m.group(1).split("{")[0].strip() if m else None
+if phrase is None:
+    print("  FAIL  could not find the GATE 0 wording in port_gate.py"); sys.exit(1)
+for line in doc.splitlines():
+    if line.startswith(prefix) and phrase not in line:
+        print(f"  FAIL  the example pastes a GATE 0 line the gate cannot produce:")
+        print(f"          {line.strip()}")
+        print(f"        the gate says: ... {phrase} ...")
+        sys.exit(1)
+sys.exit(0)
+PYEOF
+done
 [ "$fail" -eq 0 ] && echo "worked example passes the gates it prescribes" && exit 0
 echo
 echo "The worked example does not pass its own gates. Fix the example, not the gate:"

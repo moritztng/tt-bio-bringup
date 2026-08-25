@@ -306,7 +306,7 @@ changes the result. A test that still passes with a deliberately wrong key is te
 
 1. **Read the whole exception** (2000 chars, both ends) and classify: DRAM allocator OOM
    (`bank_manager.cpp`, "Not enough space to allocate ... across K banks") or L1 static-CB clash.
-2. **CB clash means a shape step, not capacity.** Quote the overlap as `cb_end − addr`, never as
+2. **CB clash means a shape step, not capacity.** Quote the overlap as `cb_end - addr`, never as
    `held + CB > bank`: the bank constant algebraically cancels, so the overlap is card-independent
    while `held_per_bank` is not. Never carry one card's bank constant to another.
 3. **Sweep by tile-count factorization, not round token counts.** A prime tile count collapses the

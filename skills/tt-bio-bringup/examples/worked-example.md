@@ -190,8 +190,8 @@ weeks from now this is the thing that is not ready.
 With those filled in, the gate flips:
 
 ```
-GATE 0: phase 0 plan notes/PORT_PLAN.md is complete: every section present, every table row
-filled, no placeholders, nothing deferred.
+GATE 0: phase 0 plan notes/PORT_PLAN.md passed every check that was asked for. Every section
+present, every table row filled, no placeholders, nothing deferred.
 ```
 
 **The second gate arm, which the plan alone does not cover.** `notes/PORT_STATE.md` is what a fresh
@@ -217,8 +217,8 @@ python3 scripts/port_gate.py report notes/PORT_STATE.md --no-tables \
 ```
 
 ```
-GATE 0: report notes/PORT_STATE.md is complete: every section present, every table row filled, no
-placeholders, nothing deferred.
+GATE 0: report notes/PORT_STATE.md passed every check that was asked for. Checked: 'Environment',
+'Decisions taken'; tables not required (--no-tables).
 ```
 
 Blank either of those last two bullets and it goes red, naming which. That is deliberate: they are

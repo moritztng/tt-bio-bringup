@@ -26,12 +26,19 @@ fi
 # and prune the same build noise .gitignore would have: a .pyc carries the absolute path of the
 # machine that built it, and the two code paths scanning different file sets is how this check
 # went blind once before.
-FILES=$(git ls-files -co --exclude-standard 2>/dev/null \
-        || find . -type f -not -path './.git/*' -not -path '*/__pycache__/*' -not -name '*.pyc')
-# The local denylist is by construction a file full of the strings we are searching for. It is
-# gitignored, so git never lists it; find does, and then every pattern in it hits itself.
-FILES=$(printf '%s\n' "$FILES" | grep -v '^\(\./\)\?scripts/redaction-local\.txt$')
-[ -z "$FILES" ] && { echo "no files to scan"; exit 2; }
+# NUL-separated end to end, in a FILE rather than a variable: a filename containing a newline used
+# to be split into two paths that do not exist, grep's error went to /dev/null, and the file was
+# never scanned while the summary counted it. It has to be a file because bash command
+# substitution silently strips NUL bytes, which is the same class of loss one layer up.
+FILELIST=$(mktemp) || exit 2
+trap 'rm -f "$FILELIST"' EXIT
+{ git ls-files -zco --exclude-standard 2>/dev/null \
+  || find . -type f -not -path './.git/*' -not -path '*/__pycache__/*' -not -name '*.pyc' -print0
+} | grep -zv '^\(\./\)\?scripts/redaction-local\.txt$' > "$FILELIST"
+# The local denylist is by construction a file full of the strings we are searching for. git never
+# lists it because it is gitignored; find does, and then every pattern in it hits itself.
+NFILES=$(tr -cd '\0' < "$FILELIST" | wc -c)
+[ "$NFILES" -eq 0 ] && { echo "no files to scan"; exit 2; }
 
 # Each entry: <label>|<extended regex>. Case-insensitive unless the pattern needs case.
 #
@@ -86,8 +93,7 @@ for entry in "${PATTERNS[@]}"; do
   # pattern for that line, and these documents tell the reader to write those URLs: a planted AWS
   # key on the same line as the repo's own URL read clean. The scanner's own file is still
   # skipped by name, which is a whole-file exemption and deliberate.
-  hits=$(printf '%s\n' "$FILES" | grep -v '^\(\./\)\?scripts/redaction-check\.sh$' \
-    | tr '\n' '\0' \
+  hits=$(grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
     | xargs -0 grep -anPi -- "$rx" 2>/dev/null \
     | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
           -e 's|git@github\.com|ALLOWED|gI' \
@@ -102,7 +108,7 @@ for entry in "${PATTERNS[@]}"; do
 done
 
 if [ "$fail" -eq 0 ]; then
-  echo "redaction check clean ($(printf '%s\n' "$FILES" | wc -l) files, ${#PATTERNS[@]} patterns)"
+  echo "redaction check clean ($NFILES files, ${#PATTERNS[@]} patterns)"
   exit 0
 fi
 echo

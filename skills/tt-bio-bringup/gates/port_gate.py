@@ -47,14 +47,14 @@ DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon)\b", re.I)
 DEFERRED_SOFT = re.compile(
     r"\b(to be (decided|determined|measured|chosen|picked)\b(?!.{0,40}\bphase\b)"
     r"|figure (this |it )?out( later)?|decide later"
-    r"|we will (decide|pick|choose|look|figure|work)"
+    r"|we will (decide|pick|choose|look|figure|work)\b(?!.{0,60}\b(phase|first|one at a time)\b)"
     r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
     r"|pick one (in|during|at) |whatever .{0,30}turns out"
     r"|seems right|good enough for now|not sure yet|no idea"
     r")\b", re.I)
 #: A cell that says nothing. "lots", "some", "a few": not a value.
 VAGUE_CELL = re.compile(
-    r"^(lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
+    r"^(n/?a|_+|lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
     r"|maybe|probably|roughly|approx|\?+|-+|\.+|etc\.?|see above|as needed|standard|default)$", re.I)
 #: The escape hatch. A blank cell is indistinguishable from an unfinished one, so it stays a
 #: failure, but "nothing here yet" is a real answer in early phases and needs a way to be said.
@@ -80,10 +80,17 @@ AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed
 #: and "yes, went from pass to fail" are answers, and a substring scan rejected both.
 NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)?|green|"
                               r"unknown|n/?a|none)$", re.I)
+#: A negation anywhere in the cell, not only as a clause of its own. "yes, still green" and
+#: "confirmed: the test did not notice" both say the control did not fire.
+NEGATION_ANYWHERE = re.compile(r"\b(still green|stayed green|did ?n[o']?t|does ?n[o']?t|"
+                               r"never|no change|unchanged|passed anyway|still pass(ed|es)?)\b",
+                               re.I)
 
 
 def negated(cell: str) -> bool:
-    return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!")) for c in re.split(r"[,;()]", cell))
+    if NEGATION_ANYWHERE.search(cell):
+        return True
+    return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!:")) for c in re.split(r"[,;:()]", cell))
 #: A threshold is a number, or a named exactness criterion.
 #: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
 #: named exactness criterion.
@@ -196,12 +203,18 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
 
     # Which section each line sits in, so a table can be judged by where it is and not only by
     # what its columns are called.
+    # Every heading in scope at each line, not only the nearest one: an `###` under
+    # `## Negative controls` used to move the section off and switch the verdict check off.
     section_of: dict[int, str] = {}
-    current = ""
+    stack: list[tuple[int, str]] = []
     for n, line in enumerate(prose.splitlines(), 1):
-        if line.startswith("#"):
-            current = line.strip("# ").strip().lower()
-        section_of[n] = current
+        s = line.strip()
+        if s.startswith("#") and s.lstrip("#").strip():
+            depth = len(s) - len(s.lstrip("#"))
+            while stack and stack[-1][0] >= depth:
+                stack.pop()
+            stack.append((depth, s.lstrip("#").strip().lower()))
+        section_of[n] = " / ".join(h for _, h in stack)
 
     tables = parse_tables(prose)
     if require_tables and not tables:
@@ -305,7 +318,9 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
     # No length cap on the label. An 80-character cap exempted the two PORT_STATE bullets this
     # check exists for, at 92 and 91 characters, and nothing said so.
-    empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]+:\s*$", l)]
+    # "- Label:" with nothing after it, or with only a dash, underscore or ellipsis after it.
+    empty = [l.strip() for l in bullets
+             if re.match(r"\s*[-*]\s*[^:]+:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", l)]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")
@@ -400,7 +415,7 @@ def gate_plan(args) -> int:
         size = next((l for l in target.splitlines() if "size range" in l.lower()), None)
         if size is None:
             problems.append(f"{path}: the Target section has no 'size range' line.")
-        elif re.search(r"\b(see|per|cf\.?|section|§)\b", size, re.I) or \
+        elif re.search(r"\b(see|cf\.?)\b|\b(section|§)\s*[0-9]", size, re.I) or \
                 len(re.findall(r"\d+", size)) < 2:
             problems.append(
                 f"{path}: the supported size range reads {size.strip(' -*')!r}. That is one number "
@@ -533,18 +548,25 @@ def gate_determinism(args) -> int:
             return 1
         runs.append({a: _sha(a) for a in artifacts})
 
-    for keep in stash.values():                # both runs wrote; the backups are stale now
-        if keep.is_file():
-            keep.unlink()
-
     differing = [a for a in artifacts if runs[0][a] != runs[1][a]]
+    if differing:
+        # A red verdict means the tree now holds run 2 of a capture that does not reproduce.
+        # Keeping that and deleting the backup destroys the golden, which is exactly what the
+        # worked example's own --unpinned negative control does. Put the original back.
+        _restore_stash()
+    else:
+        for keep in stash.values():            # deterministic: the fresh pair is the real one
+            if keep.is_file():
+                keep.unlink()
     for a in artifacts:
         mark = "DIFFERS" if a in differing else "same"
         print(f"  {mark:8s} {a}  {runs[0][a][:16]}  {runs[1][a][:16]}")
     if differing:
         print(f"GATE 1: {len(differing)} artifact(s) changed between two identical runs. "
               "Pin the seeds, the thread count and the iteration order before going on: "
-              "a golden you cannot reproduce cannot prove anything later.")
+              "a golden you cannot reproduce cannot prove anything later."
+              + (" Any artifact that existed before this run has been put back, so the "
+                 "nondeterministic output is not now your golden." if stash else ""))
         return 1
     print(f"GATE 0: {len(artifacts)} artifact(s) byte-identical across two runs.")
     return 0
@@ -575,7 +597,7 @@ CANNOT_RUN = {
 #: A check that only asks whether a path exists cannot be shown to detect a defect: the only
 #: fault it can see is the file going missing, which is not a defect in the file.
 EXISTENCE_ONLY = re.compile(
-    r"^\s*(?:test|\[\[?)\s+-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$", re.I)
+    r"^\s*(?:test|\[\[?)\s+!?\s*-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$", re.I)
 
 
 def gate_prove_red(args) -> int:

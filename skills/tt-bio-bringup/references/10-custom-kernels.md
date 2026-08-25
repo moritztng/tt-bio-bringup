@@ -35,8 +35,12 @@ Two more that change the plan rather than gating it:
   real fold made the fold slower (105 s vs 86 s). A micro-benchmark "15x" against a whole `ttnn`
   *module* at tiny N is not a comparison against `ttnn.matmul` at production N.
 - **If the model is dispatch-bound, no kernel fixes it.** At a 1000-residue fold the triangle
-  multiplication's matmuls cost ~2 s of that step's ~48 s; the rest was ~12,000 host dispatches. The
-  lever is trace capture (`ttnn.begin_trace_capture` / `ttnn.execute_trace`).
+  multiplication's matmuls were ~2 s of a ~48 s step, so a perfect matmul kernel caps that step at
+  1.04x however good it is. Where the other 46 s went is a measurement, not an assumption: count
+  the dispatches and multiply by the ~17-20 µs in `07-optimization-levers.md` §2 before blaming
+  them, because that arithmetic tops out around 0.2 s per 10,000 programs and will not explain
+  tens of seconds on its own. If it does come out dispatch-bound, the lever is trace capture
+  (`ttnn.begin_trace_capture` / `ttnn.execute_trace`), not a kernel.
 - **Wins that did ship** are 1.06x to 1.34x end-to-end, from bandwidth deletions, not from
   out-computing the library.
 
