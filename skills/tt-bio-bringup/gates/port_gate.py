@@ -36,7 +36,11 @@ sys.stdout.reconfigure(line_buffering=True)   # keep our labels interleaved with
 
 PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.,'\-]*>", re.I)
 #: Literal angle-bracket names the reference documents require, not slots to fill.
-LITERAL_ANGLE = {"<root>"}
+#: `<br>` is the only way to get a line break inside a GFM table cell, and every template here is
+#: a table, so a reader who uses one was told their document had a hole it did not have.
+LITERAL_ANGLE = {"<root>", "<br>", "<br/>", "<br />", "<sub>", "</sub>", "<sup>", "</sup>",
+                 "<kbd>", "</kbd>", "<details>", "</details>", "<summary>", "</summary>",
+                 "<code>", "</code>", "<b>", "</b>", "<i>", "</i>", "<em>", "</em>"}
 #: Angle brackets holding a real clause, e.g. "<x> is <y>", are prose rather than a template slot.
 #: A stopword alone is not enough: "<url of the repo>" and "<hash of the checkpoint>" are exactly
 #: the holes this check exists to find, and every one of them contains "of" or "the".
@@ -47,7 +51,15 @@ DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon)\b", re.I)
 DEFERRED_SOFT = re.compile(
     r"\b(to be (decided|determined|measured|chosen|picked)\b(?!.{0,40}\bphase\b)"
     r"|figure (this |it )?out( later)?|decide later"
-    r"|we will (decide|pick|choose|look|figure|work)\b(?!.{0,60}\b(phase|first|one at a time)\b)"
+    # "We will choose bf16 for the trunk" names the answer, so it is a decision, not a deferral.
+    # The lookahead used to forgive only a destination ("in Phase 2"), which meant a plan written
+    # in the future tense -- the tense a plan is written in -- read as unfinished. This arm now
+    # fires only when the verb has no object at all, or a placeholder one: "we will decide",
+    # "we will choose something", "we will figure it out later".
+    r"|we will (decide|pick|choose|look|figure|work)\b"
+    r"(?=\s*(later|then|soon|eventually|next time)\b|\s*[.,;)]|\s*$"
+    r"|\s+(it|this|that|something|one|some)\b\s*(out\b)?\s*"
+    r"(later|then|soon|[.,;)]|$))"
     r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
     r"|pick one (in|during|at) |whatever .{0,30}turns out"
     r"|seems right|good enough for now|not sure yet|no idea"
@@ -205,15 +217,26 @@ def verdict_problem(cell: str) -> str | None:
                 "Anything you want to say in a sentence goes in a Notes column, where a person "
                 "will read it, instead of here, where this gate cannot check it.")
     # "red -> red" is a transition from nothing: it says the control was already failing.
+    # Searched in `cell`, not `rest`: AFFIRMATIVE had already eaten the leading "red", so a bare
+    # "red -> red" left only " -> red" and the check could not see the pair it exists to catch.
     if re.search(r"\b(?:red|fail(?:s|ed|ing|ure)?)\b\s*(?:->|\u2192|to)\s*"
-                 r"\b(?:red|fail(?:s|ed|ing|ure)?)\b", rest, re.I):
+                 r"\b(?:red|fail(?:s|ed|ing|ure)?)\b", cell, re.I):
         return ("names the same state on both sides of the transition, so nothing moved. A control "
                 "that was already red before the break proves nothing about the break.")
     # A number is only evidence if it moved, but only for metrics where zero means "no
     # difference". A blanket zero rule condemned "yes, pcc 0.0", which is MAXIMAL divergence and
     # the loudest possible red, and "yes, red at seed 0", where the 0 is an index. Which it is
     # depends on the word in front of it.
-    tailnums = [(p, n) for p, n, at in nums if at >= tail_start] or [(p, n) for p, n, _ in nums[-1:]]
+    tailnums = [(p, n) for p, n, at in nums if at >= tail_start]
+    if not tailnums:
+        # No number after the arrow. Either there is no arrow, in which case judge what there is,
+        # or the broken run produced something unnumbered. "yes, maxdiff 0 -> nan" is the loudest
+        # possible red, and falling back to the last number in the cell judged the PRE-break 0 and
+        # told its author the fault changed nothing.
+        if tail_start > 0 and re.search(r"\S", tail):
+            tailnums = []
+        else:
+            tailnums = [(p, n) for p, n, _ in nums]
     for prev, n in tailnums:
         # `carried` is the metric named before the arrow. In "pcc 0.99 -> 1.0" the token directly
         # before 1.0 is 0.99, not a metric, so without the fallback the value after the transition
