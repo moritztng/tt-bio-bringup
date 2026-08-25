@@ -400,6 +400,25 @@ def gate_determinism(args) -> int:
         if a.is_dir():
             print(f"GATE 2: {a} is a directory. --artifact takes the file whose bytes must match.")
             return 2
+    # Move the existing artifacts aside rather than deleting them. A capture is a CPU reference
+    # run that can take thousands of seconds, `02` says to gitignore parity_artifacts/, and the
+    # commonest way to get here is a --run that never starts (an unexported $SKILL, a typo). If
+    # we unlink first and the command then exits 127, the gate has destroyed the thing it exists
+    # to protect and reported "measured nothing".
+    stash = {}
+    for a in artifacts:
+        if a.is_file():
+            keep = a.with_suffix(a.suffix + ".prove-red-backup")
+            a.replace(keep)
+            stash[a] = keep
+
+    def _restore_stash():
+        for a, keep in stash.items():
+            if keep.is_file() and not a.is_file():
+                keep.replace(a)
+            elif keep.is_file():
+                keep.unlink()
+
     for attempt in (1, 2):
         for a in artifacts:
             if a.is_file():
@@ -407,15 +426,22 @@ def gate_determinism(args) -> int:
         print(f"--- run {attempt}: {args.run}")
         rc = _sh(args.run)
         if rc != 0:
-            print(f"GATE 2: the command exited {rc} on run {attempt}. Nothing was compared.")
+            _restore_stash()
+            print(f"GATE 2: the command exited {rc} on run {attempt}. Nothing was compared, and "
+                  "your existing artifact was put back.")
             return 2
         missing = [a for a in artifacts if not a.is_file()]
         if missing:
+            _restore_stash()
             print(f"GATE 1: run {attempt} exited 0 but did not write "
                   f"{', '.join(str(m) for m in missing)}. "
-                  "An exit code is not an artifact.")
+                  "An exit code is not an artifact. Your existing artifact was put back.")
             return 1
         runs.append({a: _sha(a) for a in artifacts})
+
+    for keep in stash.values():                # both runs wrote; the backups are stale now
+        if keep.is_file():
+            keep.unlink()
 
     differing = [a for a in artifacts if runs[0][a] != runs[1][a]]
     for a in artifacts:
