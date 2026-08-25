@@ -330,9 +330,11 @@ checked as a **closed field**, not read as English. It must be 40 characters or 
 an affirmative (`yes`, `red`, `true`, `confirmed`, `went red`, `✓`), and past that hold only three
 kinds of token: a number with an optional unit, a word that measures or names the transition
 (`pcc`, `maxdiff`, `rmsd`, `red`, `green`, `at`, `to`, `from`, `in`, `vs`, `for`, `fell`,
-`dropped`, `seed`, `step`, `run`), or an identifier, which means a dotted path (`blocks.0.ffn`), a
-path or a `::` test id, a known file extension (`test_ffn.py`), or anything you wrap in backticks.
-A bare `snake_case` word is not an identifier: `no_fault_injected` is prose in an identifier's coat.
+`dropped`, `seed`, `step`, `run`), or an identifier, which means one whitespace-free token
+carrying a separator prose does not use: a dotted path (`blocks.0.ffn`), a slash path
+(`kernels/trimul.cpp`), a `::` test id (`test_attn.py::test_mask`), a known file extension
+(`test_ffn.py`), or a single token in backticks. A bare `snake_case` word is not an identifier:
+`no_fault_injected` is prose in an identifier's coat, and backticks do not launder it.
 
 Three shapes are rejected although every token in them is legal:
 
@@ -504,3 +506,37 @@ logical by default and lands in `~/.claude/skills`'s parent instead. Use the pat
 document, the parity report, the performance report, the per-finding note and the work brief. Copy
 them into your fork and fill them in. They are short on purpose, and three of them carry the
 `port_gate.py` command that checks they are actually filled.
+
+## Known limits of the gates
+
+`port_gate.py` has two kinds of check in it, and you should know which one you are leaning on.
+
+**`prove-red` is the only load-bearing one.** It runs your break, runs your check, reads the exit
+code, restores, and runs the check again. It is not reading your prose or trusting your table; it
+is executing the thing and observing what happened. When you want to *know* a control fires, run
+it. `determinism` is the same shape: it runs the capture twice and compares bytes.
+
+**Everything else is a document check, and document checks are heuristic.** `plan` and `report`
+read markdown and decide whether a cell is filled, whether a threshold is a number, whether a
+deferral is a plan or a hole, and whether a negative-control verdict reads as "it fired". They
+catch the blank cell, the `TBD`, the missing column, the control that says it stayed green. They
+cannot catch a filled cell that is simply untrue. A table these gates pass is a table that is
+*complete*, not a table that is *correct*.
+
+Two consequences worth internalising:
+
+- **A green `plan` or `report` is not evidence about your port.** It is evidence that your document
+  is finished. The evidence about your port is the parity number, the task metric, and the
+  `prove-red` exit code.
+- **If a document check argues with you and you are sure you are right, you are probably right.**
+  The verdict-column rules in particular are a closed vocabulary, not an understanding of English:
+  they reject `yes, maxdiff 0` because a zero difference means the fault changed nothing, and they
+  will also reject a phrasing they simply do not know. Put the sentence in a Notes column, where a
+  person reads it, and keep the verdict short. Do not weaken a true statement to satisfy a regex.
+
+The redaction sweep in `scripts/redaction-check.sh` has the same character. It matches shapes:
+credentials, private addresses, home paths, money, schedules. It cannot know your organisation's
+hostnames, staff names or project codenames, so it reads those from an untracked
+`scripts/redaction-local.txt` that you write. Without that file it runs the built-in patterns only,
+and it says so on every run. A clean sweep means no *known shape* is present. It is not a
+substitute for reading the diff before you publish.

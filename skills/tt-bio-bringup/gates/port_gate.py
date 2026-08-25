@@ -58,7 +58,7 @@ DEFERRED_SOFT = re.compile(
     # "we will choose something", "we will figure it out later".
     r"|we will (decide|pick|choose|look|figure|work)\b"
     r"(?=\s*(later|then|soon|eventually|next time)\b|\s*[.,;)]|\s*$"
-    r"|\s+(it|this|that|something|one|some)\b\s*(out\b)?\s*"
+    r"|\s+((in)?to|on|at|with|about|over)?\s*(it|this|that|something|one|some)\b\s*(out\b)?\s*"
     r"(later|then|soon|[.,;)]|$))"
     r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
     r"|pick one (in|during|at) |whatever .{0,30}turns out"
@@ -188,7 +188,18 @@ def verdict_problem(cell: str) -> str | None:
     tail_start = len(rest) - len(tail)
     nums: list[tuple[str | None, float, int]] = []
     prev: str | None = None
-    for m in re.finditer(r"[^\s,;:()\[\]/]+", re.sub(r"->|\u2192", " ", rest)):
+    # Blank the arrows to spaces of the SAME LENGTH. `re.sub(..., " ")` turned a two-character
+    # "->" into one, so every offset after it shifted by one, numbers fell out of the tail window,
+    # and the fallback then judged nothing at all: "yes, maxdiff 6.25 ->0" passed while
+    # "yes, maxdiff 6.25 -> 0" was correctly rejected. One deleted space disabled the rule.
+    #
+    # Splitting on ':' and '/' is also wrong: it tore "test_a.py::test_b" and "kernels/trimul.cpp"
+    # into prose-looking fragments before VERDICT_CODE_OK could see the separator that makes them
+    # identifiers, so its `[/]` and `::` branches were unreachable. A single colon still splits.
+    flat = re.sub(r"->|\u2192", lambda m: " " * len(m.group(0)), rest)
+    split = re.sub(r"(?<!:):(?!:)", " ", flat)
+    toks = [x.strip(".!\u2013\u2014") for x in re.findall(r"[^\s,;()\[\]]+", split)]
+    for m in re.finditer(r"[^\s,;()\[\]]+", split):
         tok = m.group(0).strip(".!\u2013\u2014")
         if not tok:
             continue
@@ -243,7 +254,22 @@ def verdict_problem(cell: str) -> str | None:
         # was judged with no idea what it measured.
         word = (prev or "").lower()
         if word not in DIFFERENCE_METRIC and word not in AGREEMENT_METRIC and word not in INDEX_WORD:
-            word = carried or word
+            # Look right as well as left: "1.0 pcc" names the same thing as "pcc 1.0". Matched on
+            # the token stream, not on a reformatted number: "%g" % 1.0 is "1", which never found
+            # the "1.0" actually written in the cell.
+            nxt = ""
+            for i, tok in enumerate(toks[:-1]):
+                if VERDICT_NUM_OK.match(tok):
+                    try:
+                        if float(tok.rstrip("%")) == n:
+                            nxt = toks[i + 1].lower()
+                            break
+                    except ValueError:
+                        pass
+            if nxt in DIFFERENCE_METRIC or nxt in AGREEMENT_METRIC or nxt in INDEX_WORD:
+                word = nxt
+            else:
+                word = carried or word
         # Zero is the control not firing everywhere EXCEPT as a PCC (where 0 is total divergence,
         # the loudest red there is) and as an index (seed 0, step 0, row 0). Anything else --
         # "maxdiff 0", "exit code 0", "0 of 3 runs", "fail 0", a bare 0 -- says nothing moved.

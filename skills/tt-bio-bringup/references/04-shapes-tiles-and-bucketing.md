@@ -239,8 +239,8 @@ different. That is ~14 cycles/element against `add`'s ~2, the signature of a sca
 (index dtype, ROW_MAJOR vs TILE, `sub_core_grids`, `out=` preallocation). **Do not design a port around
 scatter/gather as cheap sparse indirection.** The levers are calling it less (one decoder called `scatter` twice
 with bit-identical inputs across recycles and cached instead: free, bit-exact, ~7% of the step) or an upstream
-kernel fix. `ttnn.scatter` also rejects fp32 in TILE layout (`scatter.cpp:106`), and int32/uint32 rows longer than 256
-elements.
+kernel fix. `ttnn.scatter` in TILE layout also rejects fp32 (`scatter.cpp:106`) and int32/uint32 rows longer than 256
+elements; both limits are gated on the tile layout, not on the dtype alone.
 
 ## 10. Shape generality: the size-ladder guard
 
