@@ -59,7 +59,8 @@ Ranked by hit rate:
 
 Non-candidates, from repeated dead ends: packing Q/K/V projections (the reshape/permute/slice to
 recover them costs more dispatch than the merged linear saves, 0.93x and 0.58x on two models);
-re-implementing a matmul; anything under 5% of the forward; anything running once per request rather
+re-implementing a matmul; anything under 5% of the forward, and anything between 5% and the 10% bar
+above unless a cheaper lever has already been tried and measured on it; anything running once per request rather
 than once per step.
 
 ## 3. The four routes

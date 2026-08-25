@@ -61,9 +61,18 @@ inherits exported variables only, so a plain assignment expands `"$SKILL/example
 `references/`, `templates/` and `gates/` are all under `$SKILL`.
 
 If nothing matched, you are working from a plain clone rather than an install. That is fine: use the
-clone's own path as `$SKILL`. Copy `$SKILL/gates/port_gate.py` into your fork as
-`scripts/port_gate.py` before Phase 0, because every gate below calls it. It is standard library
-only.
+clone's own path as `$SKILL`.
+
+Then, whichever way you got here, copy the gate script into your fork before Phase 0. This is not
+optional and it is not only for the plain-clone case: five of the eight gates below run
+`scripts/port_gate.py`, and without the copy every one of them fails on a missing file.
+
+```bash
+mkdir -p scripts && cp "$SKILL/gates/port_gate.py" scripts/
+```
+
+It is standard library only, so it runs under any Python 3.10 or later, including before you have
+built `env`.
 
 ## Where the port's own documents live
 

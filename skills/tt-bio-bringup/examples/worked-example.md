@@ -351,30 +351,40 @@ firing at another, every time, and timing is too noisy to notice a path that qui
 
 Census first, roofs second, prediction third, build fourth. *Every number illustrative.*
 
-| Op | Calls | Device time | Share | Bound by |
-|---|---|---|---|---|
-| `ttnn.linear` | 22 | 4.1 ms | 38% | compute, 1.4x off the measured roof |
-| broadcast add in the head | 1 | 3.3 ms | 31% | DRAM bandwidth, 1.1x off |
-| `ttnn.transformer.scaled_dot_product_attention` | 4 | 1.8 ms | 17% | compute, 2.2x off |
-| everything else | 61 | 1.5 ms | 14% | mixed |
+| Op | Calls | Device time | Share of device | Share of wall | Bound by |
+|---|---|---|---|---|---|
+| `ttnn.linear` | 22 | 4.1 ms | 38% | 13.1% | compute, 1.4x off the measured roof |
+| broadcast add in the head | 1 | 3.3 ms | 31% | 10.5% | DRAM bandwidth, 1.1x off |
+| `ttnn.transformer.scaled_dot_product_attention` | 4 | 1.8 ms | 17% | 5.7% | compute, 2.2x off |
+| everything else | 61 | 1.5 ms | 14% | 4.8% | mixed |
 
 Wall clock 31.4 ms, summed device time 10.7 ms, **residual 20.7 ms, 66% of the wall**. That residual
 is the whole finding. 88 op dispatches at a small size, so the host round-trip dominates and the
 biggest number in the census table is not in the census table. A campaign that starts from the op
-list optimizes `ttnn.linear` and captures at most 38% of a third of the time.
+list optimizes `ttnn.linear` and captures at most 13% of the time.
 
-| Lever | Ceiling (Amdahl) | Predicted | Measured | Decision |
-|---|---|---|---|---|
-| trace capture, whole forward | 66% (the residual) | 2.4x | 2.1x | landed |
-| project to bins before the outer sum | 31% (the broadcast add) | 1.35x | 1.28x | landed |
-| fused attention kernel | 17% (SDPA) | 1.09x | not built | killed: 9% end-to-end, under the 10% custom-kernel bar |
+**Two share columns, on purpose.** A profiler gives you the first one. Amdahl needs the second, and
+using the first where the second belongs is the unit slip that
+`05-perf-method-and-roofline.md` §5 records costing a multi-day effort. The broadcast add is 31% of
+device time and 10.5% of the wall; the ceiling on any lever that removes it entirely is
+`1 / (1 - 0.105)` = **1.12x**, not 1.45x. Every ceiling below is computed from the wall column.
+
+| Lever | Share of wall it touches | Ceiling | Predicted | Measured | Decision |
+|---|---|---|---|---|---|
+| trace capture, whole forward | 66% (the residual) | 2.93x | 2.4x | 2.1x | landed |
+| project to bins before the outer sum | 10.5% (the broadcast add) | 1.12x | 1.09x | 1.08x | landed |
+| fused attention kernel | 5.7% (SDPA) | 1.06x | not built | not built | killed: 5.7% of the wall, under the 10% custom-kernel bar |
 
 The prediction is written before the build, so a miss is informative. The killed lever stays in the
 table with the number that killed it, so it cannot come back in six weeks as a fresh proposal on a
 different metric.
 
-Then re-census, because every label in the table above expired the moment trace capture removed the
-traffic that produced it.
+**Then re-census, and watch a label expire.** Trace capture landed at 2.1x, so the wall is now
+15.0 ms against the same 10.7 ms of device time: the residual has fallen from 20.7 ms to 4.3 ms. The
+broadcast add did not get slower, but it is now 3.3 of 15.0 ms, **22% of the wall rather than 10.5%**,
+and its ceiling has gone from 1.12x to 1.28x. A lever worth 1.12x before the campaign started is
+worth 1.28x after, which is the whole reason the rule is re-census after every landing and not
+rank once at the start.
 
 ### Phase 6: integration
 

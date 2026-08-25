@@ -38,6 +38,8 @@ def _to_cpu(x):
         return x.detach().to(torch.float32).cpu()
     if isinstance(x, dict):
         return {k: _to_cpu(v) for k, v in x.items()}
+    if isinstance(x, tuple) and hasattr(x, "_fields"):
+        return type(x)(*(_to_cpu(v) for v in x))   # a namedtuple takes positional args, not an iterable
     if isinstance(x, (list, tuple)):
         return type(x)(_to_cpu(v) for v in x)
     if dataclasses.is_dataclass(x) and not isinstance(x, type):
