@@ -161,23 +161,29 @@ Phase 0 of `SKILL.md`. Copy the templates in, write the plan, and run the gate o
 # Where the skill's files are. An install, or the clone you made to read this.
 export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
-: "${SKILL:=/path/to/your/clone/of/tt-bio-bringup/skills/tt-bio-bringup}"
-test -f "$SKILL/SKILL.md" || { echo "set SKILL to the skill directory"; }
 
-mkdir -p notes scripts
-cp "$SKILL/templates/PORT_PLAN.md" "$SKILL/templates/PORT_STATE.md" notes/
-cp "$SKILL/gates/port_gate.py" scripts/
+if ! test -f "$SKILL/SKILL.md"; then
+    echo "No install found. Point SKILL at your clone and re-run this block:"
+    echo "  export SKILL=~/tt-bio-bringup/skills/tt-bio-bringup"
+else
+    mkdir -p notes scripts
+    cp "$SKILL/templates/PORT_PLAN.md" "$SKILL/templates/PORT_STATE.md" notes/
+    cp "$SKILL/gates/port_gate.py" scripts/
 
-# Upstream ignores /notes/ because its planning lives elsewhere; yours does not.
-grep -qE '^/?notes/?$' .gitignore && sed -i -E '/^\/?notes\/?$/d' .gitignore
-git check-ignore notes/PORT_PLAN.md && echo "still ignored, fix .gitignore by hand"
+    # Upstream ignores /notes/ because its planning lives elsewhere; yours does not.
+    grep -qE '^/?notes/?$' .gitignore && sed -i -E '/^\/?notes\/?$/d' .gitignore
+    git check-ignore notes/PORT_PLAN.md && echo "still ignored, fix .gitignore by hand"
 
-./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md   # red now, and it says why
+    # port_gate.py is standard library only, so a bare python3 is correct here and only here:
+    # this has to work before `env` exists, because Phase 0 does not wait for the hardware.
+    python3 scripts/port_gate.py plan notes/PORT_PLAN.md   # red now, and it says why
+fi
 ```
 
-The `test -f` line matters: `find` exits 0 when it matches nothing, so on a plain clone with nothing
-installed `$SKILL` comes back empty and the `cp` fails with a path that looks like a bug in this
-document. If that happens, point `SKILL` at your clone.
+The `if` matters: `find` exits 0 when it matched nothing, so on a plain clone with nothing installed
+`$SKILL` comes back empty and every `cp` below it would fail with a path that looks like a bug in
+this document. Guarding the whole block rather than warning and continuing is what makes the paste
+safe either way.
 
 The `grep -qE` guard matters for the same reason in reverse: upstream's rule is `/notes/`, but a
 `sed` written for one spelling exits 0 having changed nothing if the file says `notes/` instead, and

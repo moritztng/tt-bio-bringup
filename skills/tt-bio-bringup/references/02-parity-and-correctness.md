@@ -97,6 +97,38 @@ correctly captured optional argument.
   an *empty* loop at 1, so every per-step module silently never runs and the golden holds only the
   step-invariant parts.
 
+### 1.2b What the capture writes, and how a test names it
+
+`capture()` above returns a dict and stops there. Settle the rest once, because the plan's Golden
+column has to name something a test can load, and three different conventions in one port is three
+different bugs.
+
+**One file per input length**, not one per module. The capture walks every module in a single
+forward, so splitting the result into fifty files buys nothing and loses the guarantee that they all
+came from the same pass.
+
+```
+scripts/<model>_port/parity_artifacts/<model>_<len>.pt        # the golden
+scripts/<model>_port/parity_artifacts/<model>_<len>.meta.json # provenance, see §1.4
+```
+
+**Keys are `<module path>/args`, `<module path>/kwargs`, `<module path>/out`**, with the module path
+exactly as `named_modules()` spells it and `<root>` for the top-level model. The example's capture at
+`--len 117` writes 41 modules as 123 entries under those keys.
+
+**So a plan's Golden cell names the file and the key**, for example
+`minifold_117.pt : blocks.0.attn/out`. That is loadable:
+
+```python
+golden = torch.load("scripts/minifold_port/parity_artifacts/minifold_117.pt", weights_only=False)
+expected = golden["blocks.0.attn/out"]
+args, kwargs = golden["blocks.0.attn/args"], golden["blocks.0.attn/kwargs"]
+```
+
+The `.meta.json` sits beside the fixture and is deliberately **not** part of any byte-identity gate:
+it records a runtime, which is a measurement, so hashing it fails the gate for a reason that is not
+a defect.
+
 ### 1.3 Fixture size
 
 | Fixture | Size | Purpose |

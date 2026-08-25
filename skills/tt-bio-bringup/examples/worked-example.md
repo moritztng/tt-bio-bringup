@@ -70,7 +70,7 @@ cp "$SKILL/gates/port_gate.py" scripts/
 The template starts red, and it names every hole:
 
 ```
-GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 12 problem(s):
+GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
   notes/PORT_PLAN.md:34: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
   notes/PORT_PLAN.md:45: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
@@ -80,6 +80,8 @@ GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 12 problem(s):
   ... four more Evaluation-set rows ...
   notes/PORT_PLAN.md:32: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
     at least 3: the leaves, the blocks they compose into, and the whole model.
+  notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
+  notes/PORT_PLAN.md: 'Target' has 4 unanswered item(s), first is '- Chip generation and card count:'
   notes/PORT_PLAN.md: the supported size range reads 'Supported size range to ship (state numbers,
     not "large"):'. That is one number or none. State both ends.
 ```
@@ -92,16 +94,22 @@ whole model, which does not work.
 
 | Module | Params | Input shape | Output shape | Golden fixture | Parity threshold | Status |
 |---|---|---|---|---|---|---|
-| `embed` | 2,816 | `[1, L]` int64 | `[1, L, 128]` | `embed.pt` | maxdiff 0 (a gather) | not started |
-| `blocks.0.norm1` | 256 | `[1, L, 128]` | `[1, L, 128]` | `block0_norm1.pt` | PCC >= 0.9999 | not started |
-| `blocks.0.attn` | 66,048 | `[1, L, 128]` + mask | `[1, L, 128]` | `block0_attn.pt` | PCC >= 0.999 | not started |
-| `blocks.0.ffn` | 131,712 | `[1, L, 128]` | `[1, L, 128]` | `block0_ffn.pt` | PCC >= 0.9995 | not started |
-| `blocks.0` (whole) | 198,272 | `[1, L, 128]` + mask | `[1, L, 128]` | `block0.pt` | PCC >= 0.999 | not started |
-| `blocks` (4 blocks) | 793,088 | `[1, L, 128]` + mask | `[1, L, 128]` | `trunk.pt` | PCC >= 0.998 | not started |
-| `head.proj` | 16,512 | `[1, L, 128]` | `[1, L, 128]` | `head_proj.pt` | PCC >= 0.9995 | not started |
-| `head.out` | 2,064 | `[1, L, L, 128]` | `[1, L, L, 16]` | `head_out.pt` | PCC >= 0.998 | not started |
-| `head` (whole) | 18,576 | `[1, L, 128]` | `[1, L, L, 16]` | `head.pt` | PCC >= 0.998 | not started |
-| `MiniFold` (whole) | 814,480 | `[1, L]` + mask | dict of 2 | `e2e.pt` | PCC >= 0.998 both | not started |
+| `embed` | 2,816 | `[1, L]` int64 | `[1, L, 128]` | `minifold_117.pt : embed/out` | maxdiff 0 (a gather) | not started |
+| `blocks.0.norm1` | 256 | `[1, L, 128]` | `[1, L, 128]` | `… : blocks.0.norm1/out` | PCC >= 0.9999 | not started |
+| `blocks.0.attn` | 66,048 | `[1, L, 128]` + mask | `[1, L, 128]` | `… : blocks.0.attn/out` | PCC >= 0.999 | not started |
+| `blocks.0.ffn` | 131,712 | `[1, L, 128]` | `[1, L, 128]` | `… : blocks.0.ffn/out` | PCC >= 0.9995 | not started |
+| `blocks.0` (whole) | 198,272 | `[1, L, 128]` + mask | `[1, L, 128]` | `… : blocks.0/out` | PCC >= 0.999 | not started |
+| `blocks` (4 blocks) | 793,088 | `[1, L, 128]` + mask | `[1, L, 128]` | `… : blocks.3/out` | PCC >= 0.998 | not started |
+| `head.proj` | 16,512 | `[1, L, 128]` | `[1, L, 128]` | `… : head.proj/out` | PCC >= 0.9995 | not started |
+| `head.out` | 2,064 | `[1, L, L, 128]` | `[1, L, L, 16]` | `… : head.out/out` | PCC >= 0.998 | not started |
+| `head` (whole) | 18,576 | `[1, L, 128]` | `[1, L, L, 16]` | `… : head/out` | PCC >= 0.998 | not started |
+| `MiniFold` (whole) | 814,480 | `[1, L]` + mask | dict of 2 | `… : <root>/out` | PCC >= 0.998 both | not started |
+
+Every Golden cell names one file and one key inside it, which is the contract in
+`02-parity-and-correctness.md` §1.2b: one capture per input length, keyed by module path. The `…` is
+`minifold_117.pt` in every row; it is written out once and elided after that so the column stays
+readable. Ten separate `.pt` files would be ten chances for one of them to come from a different
+forward pass.
 
 Those thresholds are a first guess from `03-precision-and-numerics.md`'s plausibility bands. Phase 1
 replaces every one of them with the measured bf16 self-envelope for that module. Writing a guess now

@@ -177,15 +177,24 @@ config inside each fixture.
 agrees with it.
 
 ```bash
+export REF_PY=../yourmodel-reference/env/bin/python3     # or ./env/bin/python3, see below
 ./env/bin/python3 scripts/port_gate.py determinism \
-    --run './env/bin/python3 scripts/yourmodel_port/capture.py --len 117 --seed 0' \
-    --artifact scripts/yourmodel_port/parity_artifacts/blocks_117.pt
+    --run '$REF_PY scripts/yourmodel_port/capture.py --len 117 --seed 0' \
+    --artifact scripts/yourmodel_port/parity_artifacts/yourmodel_117.pt
 ./env/bin/python3 -m pytest tests/test_yourmodel_fixtures.py -q
 ```
 
-The artifact path carries `$CARD` on purpose. The determinism arm deletes the artifact before each
-of its two runs, so two agents on two cards writing one `/tmp/fw.npy` delete each other's file
-between runs and produce a red that is nobody's bug. Any fixed path under `/tmp` has this problem.
+**Three interpreters are in play and they are not interchangeable.** `port_gate.py` is standard
+library only, so any Python 3.10 or later runs it, including before `env` exists, which is what
+lets Phase 0 finish while the hardware is still in a box. The pytest arm is tt-bio's
+`./env/bin/python3`, because it imports `tt_bio`. The capture is the one that catches people out:
+it imports your **reference**, so it runs under whatever interpreter can import that. If your
+reference installs cleanly beside tt-bio, `REF_PY=./env/bin/python3` and there is one venv. If it
+needs its own, as `01-orientation.md` step 6 allows, `REF_PY` is that venv's interpreter and
+tt-bio's cannot run the capture at all. Decide which in Phase 0 and write it in
+`notes/PORT_STATE.md`. What is never right is a bare `python3`: you will not notice which one you
+got, and that is the whole point of naming interpreters.
+
 
 The determinism arm deletes the artifact first, so a run that exits 0 without writing it fails
 instead of passing on a stale file from yesterday. Do not add the fixture's `.meta.json` to that
@@ -206,6 +215,11 @@ slow. It is allowed to be numerically off. It is not allowed to silently skip pa
 
 **Exit gate:** every reference parameter consumed exactly once, and the same input twice gives the
 same bits.
+
+The forward's artifact path carries `$CARD` on purpose. The determinism arm deletes the artifact
+before each of its two runs, so two agents on two cards writing one `/tmp/fw.npy` delete each
+other's file between runs and produce a red that is nobody's bug. Any fixed path under `/tmp` has
+this problem.
 
 ```bash
 TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_weights.py -q
