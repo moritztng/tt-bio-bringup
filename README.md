@@ -99,9 +99,11 @@ the workflow reads `$SKILL`.
 
 First get to the starting line: fork and install tt-bio, check the cards answer, run its test suite,
 fold one existing model. That is `references/01-orientation.md`, "Day zero". Everything from Phase 2
-on is uninterpretable until one existing model folds on your card, so do not skip it. You do not have to
-wait for it either: Phase 0 and Phase 1 need torch and nothing else, so if the hardware is still in
-a box, start Phase 0 today and do day zero alongside it.
+on is uninterpretable until one existing model folds on your card, so do not skip it.
+
+You do not have to wait for it either. Phase 0 and Phase 1 need no card at all, so if the hardware
+is still in a box, start Phase 0 today and do day zero alongside it. "Day zero" says which two
+Phase 0 fields want a card and what to write instead.
 
 Then, in your fork:
 
