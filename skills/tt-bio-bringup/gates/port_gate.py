@@ -352,6 +352,15 @@ def gate_plan(args) -> int:
                 problems.append(f"{path}:{tree.line_no}: module tree has no {want} column")
             cols[want] = idx
 
+        names = [row[cols["module"]].strip(" *`") for n, row in tree.rows
+                 if cols.get("module") is not None and cols["module"] < len(row)]
+        dupes = {n for n in names if names.count(n) > 1}
+        if dupes:
+            problems.append(
+                f"{path}:{tree.line_no}: the module tree names {', '.join(sorted(dupes))} more "
+                "than once. A decomposition has each module in it once; repeating a row pads the "
+                "count without adding a component to prove.")
+
         if len(tree.rows) < MIN_TREE_ROWS:
             problems.append(
                 f"{path}:{tree.line_no}: module tree has {len(tree.rows)} row(s). "
