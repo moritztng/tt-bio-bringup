@@ -121,14 +121,39 @@ the whole box from whoever else is using it.
 For each gate, run it, then prove it can fail:
 
 ```bash
-./env/bin/python3 scripts/port_gate.py prove-red \
-    --check   '<the gate command>' \
-    --break   '<the smallest edit a real regression would make>' \
-    --restore '<the inverse edit>'
+python3 scripts/port_gate.py prove-red \
+    --check         '<the gate command>' \
+    --break         '<the smallest edit a real regression would make>' \
+    --restore       '<the inverse edit>' \
+    --expect-change '<the file the break edits>'
 ```
 
 A gate you have not watched go red is not a gate. `prove-red` exists so that checking costs one
 command instead of a decision, which is the only reason it actually gets done.
+
+**Pass `--expect-change`.** A `sed -i` whose pattern no longer matches exits 0 having changed
+nothing, and that reads identically to a gate that is decoration. With the flag, `prove-red` compares
+the file's hash either side of the break and refuses instead of blaming your gate. It compares again
+after the restore, so a restore that exits 0 and leaves the tree dirty cannot print green.
+
+**Break the code, not the harness.** These all make a check exit non-zero without showing it can
+detect anything, and `prove-red` refuses each one rather than counting it as red:
+
+| What the break did | What the check exits | Why it proves nothing |
+| --- | --- | --- |
+| moved or deleted the test file | pytest 4 | the check failed to start |
+| renamed the test function | pytest 5 | no tests were collected |
+| broke an import in the test | pytest 2 | collection error |
+| mistyped the command | shell 127 | it never ran |
+
+If your check genuinely reports a defect with one of those codes, say so with `--red-exit N` and it
+will hold you to exactly that code.
+
+One trap that has nothing to do with this tool and will bite you anyway: **a same-length edit to a
+Python file may not take effect**, because the `.pyc` cache is keyed on source mtime *and size*, and
+`VALUE = 2` to `VALUE = 3` changes neither within one second. The break runs, the file really is
+different, and the check imports yesterday's bytecode. Put `rm -rf __pycache__` in front of a
+`--check` that imports the file you are editing, or make the break change the length.
 
 ### Phase 0 - Map the model (no device code)
 
@@ -270,9 +295,12 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_p
 ```
 
 The report arm is why the parity template has a negative-controls table. It checks four things and
-you should know which: the section exists, it holds a table with rows in it, no cell is blank, and
-no "Went red?" cell says `no`, `pass` or `passed`. What it cannot check is whether you actually ran
-the injection. `port_gate.py prove-red` is what makes that true; the table is where you record it.
+you should know which: the section exists, it holds a table with rows in it, no cell is blank or
+bare punctuation, and every "Went red?" cell starts with an affirmative (`yes`, `red`, `true`,
+`confirmed`, `went red`) and does not also contain a negation. So `yes - red at 0.712` and
+`red on commit abc123` are answers; `pass`, `passed`, `green`, `not yet` and `red herring, no` are
+not. What it cannot check is whether you actually ran the injection. `port_gate.py prove-red` is
+what makes that true; the table is where you record it.
 
 ### Phase 4 - Generality
 

@@ -62,9 +62,12 @@ GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
 GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+|tbd/.*|todo/.*)$", re.I)
 #: Columns whose whole purpose is to record that something failed on purpose.
 MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
-#: "pass" is not an answer here: the column records that the test FAILED when broken.
-AFFIRMATIVE = re.compile(r"(yes|y|red|true|✓|✔|confirmed|went red|failed as expected)"
-                         r"(\s*[,(].*)?", re.I)
+#: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
+#: a PREFIX, so "yes - red at 0.712" and "red on commit abc123" are answers, not violations.
+AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed)( as expected)?)\b",
+                         re.I)
+#: ...but a negation anywhere in the cell overrides the prefix, so "red herring, no" is rejected.
+NEGATED = re.compile(r"\b(no|not|never|didn'?t|did ?not|pass(ed)?|green|unknown|n/?a)\b", re.I)
 #: A threshold is a number, or a named exactness criterion.
 #: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
 #: named exactness criterion.
@@ -174,16 +177,28 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 problems.append(f"{path}:{n}: empty cell(s) under {', '.join(blank)!r}")
             for i, cell in enumerate(row):
                 col = t.header[i] if i < len(t.header) else f"col{i + 1}"
-                v = cell.strip().strip("*`").strip()
-                if v and NOT_YET.fullmatch(v):
+                raw = cell.strip()
+                v = raw.strip("*`").strip()
+                # A cell holding only decoration is a blank cell wearing a disguise: stripping
+                # `*` and backticks left nothing, and every check below is guarded on `v`.
+                if raw and not v:
+                    problems.append(f"{path}:{n}: {raw!r} under {col!r} is punctuation, not an "
+                                    "answer. A cell that survives stripping as empty is empty.")
+                    continue
+                # "none yet" is an answer in most columns and never in this one: a control you
+                # have not run yet is the thing the column exists to make visible.
+                if v and NOT_YET.fullmatch(v) and not MUST_BE_YES.search(col):
                     continue                       # an explicit "nothing here yet" is an answer
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" column answered "no" is the finding, not a filled cell.
-                if v and MUST_BE_YES.search(col) and not AFFIRMATIVE.fullmatch(v):
+                if v and MUST_BE_YES.search(col) and (
+                        not AFFIRMATIVE.match(v) or NEGATED.search(v)):
                     problems.append(
-                        f"{path}:{n}: {col!r} says {v!r}. A negative control that did not go red is "
-                        "not a control: the test it guards has not been shown able to fail.")
+                        f"{path}:{n}: {col!r} says {v!r}. This column records that the test FAILED "
+                        "when you broke it, so it has to start with yes, red, true or confirmed, "
+                        "and it must not also say no, pass or green. A control that did not fire "
+                        "is the finding, not a filled cell.")
     return problems
 
 
@@ -402,6 +417,21 @@ def _fingerprint(paths):
     return {q: (_sha(Path(q)) if Path(q).is_file() else None) for q in paths}
 
 
+#: Exit codes that mean "the check never ran", not "the check failed". pytest uses 2 for a
+#: collection error, 3 internal, 4 usage (the file is not there), 5 nothing collected; the shell
+#: uses 126 not-executable and 127 not-found. A break that produces one of these has not shown
+#: the check can fail, it has shown the check can be prevented from running, which is the
+#: vacuous pass this whole subcommand exists to catch.
+CANNOT_RUN = {
+    2: "pytest: collection error, or our own gate saying it could not run",
+    3: "pytest: internal error",
+    4: "pytest: usage error, usually the test file is not where you said",
+    5: "pytest: no tests were collected",
+    126: "shell: command found but not executable",
+    127: "shell: command not found",
+}
+
+
 def gate_prove_red(args) -> int:
     watched = args.expect_change or []
     print(f"--- check, as it stands: {args.check}")
@@ -428,6 +458,17 @@ def gate_prove_red(args) -> int:
                   f"{', '.join(unchanged)}. Nothing was injected, so this run says nothing about "
                   "the check. Usually the pattern no longer matches the file.")
             return 2
+    # Deleting the thing under test is not injecting a fault into it. The fingerprint above
+    # counts a vanished file as "changed", which is true and useless: the check then fails
+    # because there is nothing to check.
+    if watched:
+        gone = [q for q in watched if was[q] is not None and not Path(q).is_file()]
+        if gone:
+            print(f"GATE 2: the break removed {', '.join(gone)} rather than changing it. A check "
+                  "that fails because the file is missing has not been shown to fail on a defect. "
+                  "Edit the file, do not move it.")
+            return 2
+
     print(f"--- check, with the fault injected: {args.check}")
     broken = _sh(args.check)
 
@@ -463,6 +504,21 @@ def gate_prove_red(args) -> int:
               "  existence instead of content, a committed verdict re-read instead of recomputed,\n"
               "  the installed package instead of your checkout, or an inverted exit status.")
         return 1
+    expected = args.red_exit
+    if expected is not None and broken != expected:
+        print(f"GATE 1: with the fault injected the check exits {broken}, and you said its "
+              f"failure code is {expected}. Whatever {broken} means here, it is not this check "
+              "reporting a defect.")
+        return 1
+    if expected is None and broken in CANNOT_RUN:
+        print(f"GATE 2: with the fault injected the check exits {broken}, which means it did not "
+              f"run: {CANNOT_RUN[broken]}.")
+        print("  A check that cannot run is not a check that failed. Injecting a fault that stops\n"
+              "  the check from starting proves nothing about what it asserts, and this is the\n"
+              "  most common way a prove-red run reads green while measuring nothing.")
+        print("  Break the code under test, not the harness. If this exit code really is how your\n"
+              f"  check reports a defect, say so with --red-exit {broken}.")
+        return 2
     print(f"GATE 0: green (0) -> fault injected -> red ({broken}) -> restored -> green (0). "
           "This check can fail, so its green means something.")
     return 0
@@ -494,6 +550,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--check", required=True, metavar="CMD")
     p.add_argument("--break", required=True, metavar="CMD", dest="break")
     p.add_argument("--restore", required=True, metavar="CMD")
+    p.add_argument("--red-exit", type=int, metavar="N",
+                   help="the exit code this check uses to report a defect, when it is not the "
+                        "usual 1. Without it, an exit code that means 'could not run' (2-5, 126, "
+                        "127) is refused rather than counted as red.")
     p.add_argument("--expect-change", action="append", metavar="PATH",
                    help="a file the break must actually modify; refuses with exit 2 if it did not. "
                         "Use it whenever the break is a sed or a patch.")
