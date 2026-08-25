@@ -10,12 +10,13 @@ The reference documents ship with the `tt-bio-bringup` skill, not with the repos
 working in, so a bare relative path will not resolve. Locate them first:
 
 ```bash
-REFS=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+export REFS=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
        -type d -name references -path '*tt-bio-bringup*' 2>/dev/null | head -1)
-test -n "$REFS" || echo "tt-bio-bringup references not found; say so and stop"
+test -n "$REFS" && test -f "$REFS/01-orientation.md" && echo "references at $REFS" || {
+    echo "tt-bio-bringup references NOT found"; false; }
 ```
 
-Read `12-testing-and-gates.md` from that directory. If you cannot find the
+Read `12-testing-and-gates.md` from that directory. Read them as `$REFS/<name>.md`. The block ends in `false` because `find` exits 0 when it matched nothing. If you cannot find the
 directory, say so and stop. An agent that carries on without the document still produces confident
 output, and that is the worst outcome available here.
 

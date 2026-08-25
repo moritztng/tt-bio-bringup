@@ -405,6 +405,19 @@ def gate_prove_red(args) -> int:
         print(f"GATE 2: restore exited {restore_rc} and the restored check exits {after}. "
               "Your tree may still hold the injected fault. Fix that before reading the result.")
         return 2
+
+    # The rule applied to the break, applied to the restore: an exit code is not an edit. A
+    # restore that exits 0 and leaves the file changed would otherwise print GATE 0 and hand
+    # back a dirty checkout, with the green coming from a tree nobody meant to ship.
+    if watched:
+        final = _fingerprint(watched)
+        dirty = [q for q in watched if was[q] != final[q]]
+        if dirty:
+            print(f"GATE 2: the check went red and back to green, but {', '.join(dirty)} no "
+                  "longer matches what it was before the break. The restore exited 0 without "
+                  "fully undoing the edit, so your tree is dirty and this green is not about "
+                  "the tree you started with.")
+            return 2
     if broken == 0:
         print("GATE 1: the check stayed green with the fault injected.")
         if not watched:
