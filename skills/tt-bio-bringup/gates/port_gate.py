@@ -325,6 +325,13 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     problems = []
     stripped = strip_code_blocks(body)
     bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
+    # A numbered item with nothing after the number is an empty item, and "Risks, ranked" is a
+    # numbered list, so "1." and "2." alone used to count as content for the whole section.
+    numbered_empty = [l.strip() for l in stripped.splitlines()
+                      if re.match(r"\s*\d+[.)]\s*$", l)]
+    if numbered_empty:
+        problems.append(f"{path}: {name!r} has {len(numbered_empty)} numbered item(s) with "
+                        "nothing after the number.")
     # No length cap on the label. An 80-character cap exempted the two PORT_STATE bullets this
     # check exists for, at 92 and 91 characters, and nothing said so.
     # "- Label:" with nothing after it, or with only a dash, underscore or ellipsis after it.
