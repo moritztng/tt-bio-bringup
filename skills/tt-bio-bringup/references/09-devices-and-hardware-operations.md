@@ -98,7 +98,8 @@ device is clocked up at 60-68 W but computing nothing, and nothing under the run
 for minutes.
 
 ```bash
-PID=<the process id>; PID=${PID:?}                  # a bare <pid> is a shell redirection
+PID=                                                # fill this in; a bare <pid> would be a redirection
+: "${PID:?set PID to the suspect process}"
 ps -o pid,stat,wchan:24,etime -p "$PID"             # Ssl + futex_do_wait
 top -b -n2 -d 1.5 -p "$PID" | tail -3               # 0.0% CPU across 3+ minutes
 find "$RUN_DIR/" -newermt "5 minutes ago" -type f    # nothing = no progress
