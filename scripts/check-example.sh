@@ -31,9 +31,28 @@ table() {
     ' "$EX"
 }
 
+# How many tables in the example have a header containing this key. More than one and table()
+# silently picks the first, which is the same defeat the plan gate has for a decoy module tree.
+count_tables() {
+    awk -v key="$1" '
+        /^```/ { fence = !fence; next }
+        fence { next }
+        /^\|/ && index($0, key) && !prev { n++ }
+        { prev = /^\|/ }
+        END { print n + 0 }
+    ' "$EX"
+}
+
 # table() finding nothing looked exactly like table() finding an empty section, so a deleted
 # table in the example produced a plan the gate happily passed. Fail loudly instead.
 need_table() {
+    n=$(count_tables "$1")
+    if [ "$n" -gt 1 ]; then
+        printf '  FAIL  %s tables in the example have a header containing %s\n' "$n" "$1" >&2
+        printf '        table() takes the first, so this check would judge whichever one comes\n' >&2
+        printf '        first and say nothing about the other. Make the headers distinct.\n' >&2
+        exit 1
+    fi
     out=$(table "$1")
     if [ -z "$out" ]; then
         printf '  FAIL  no table in the example whose header contains %s\n' "$1" >&2
@@ -126,7 +145,7 @@ check "Phase 3 parity report, from the example's own tables" 0 "$TMP/parity.md" 
     echo; echo "## Measured roofs"; echo
     need_table "| Roof | Method | Value |"
     echo; echo "## Op census"; echo
-    need_table "Share of wall"
+    need_table "Share of device"
     echo; echo "## Levers"; echo
     need_table "Share of wall it touches"
 } > "$TMP/perf.md"
