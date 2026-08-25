@@ -30,7 +30,7 @@ trap 'rm -rf "$TMP"' EXIT
 # extraction picks up a line of a GATE 1 message instead of the table it names.
 table() {
     awk -v key="$1" '
-        /^```/ { fence = !fence; next }
+        /^[[:space:]]*```/ { fence = !fence; next }
         fence { next }
         $0 ~ /\|/ && !/^ *#/ && index($0, key) { on = 1 }
         on && /\|/ && !/^ *#/ { print; next }
@@ -42,7 +42,7 @@ table() {
 # silently picks the first, which is the same defeat the plan gate has for a decoy module tree.
 count_tables() {
     awk -v key="$1" '
-        /^```/ { fence = !fence; next }
+        /^[[:space:]]*```/ { fence = !fence; next }
         fence { next }
         /\|/ && !/^ *#/ && index($0, key) && !prev { n++ }
         { prev = (/\|/ && !/^ *#/) }
@@ -145,7 +145,7 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
     echo; echo "## Component parity"; echo
     # From the Phase 3 heading to the Negative controls paragraph.
     awk '
-        /^```/ { fence = !fence; next }
+        /^[[:space:]]*```/ { fence = !fence; next }
         fence { next }
         /^### Phase 3: component parity/ { on = 1; next }
         on && /^\*\*Negative controls\*\*/ { exit }
@@ -157,7 +157,7 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
     # the first table, which is how a planted second one stayed invisible: the point of this
     # block is that it does not choose.
     awk '
-        /^```/ { fence = !fence; next }
+        /^[[:space:]]*```/ { fence = !fence; next }
         fence { next }
         /^\*\*Negative controls\*\*/ { on = 1; next }
         on && /^#/ { exit }
@@ -174,11 +174,12 @@ check "every table the example puts under a heading Phase 3 judges" 0 "$TMP/pari
 #     of these checks green because none of them extracts it. This block does not name anything.
 #     It cannot judge which heading a table sits under, so it catches the content defects
 #     (blank cell, TBD, "lots", a short row, a verdict that says the control did not fire) and
-#     leaves the heading-sensitive ones to the blocks above.
+#     leaves the heading-sensitive ones to the blocks above. A table written as HTML is
+#     invisible to this and to the gate alike, which is a reason not to write one.
 {
     echo "# Every table in the worked example"
     echo; echo "## Tables"; echo
-    awk '/^```/ { fence = !fence; next } fence { next } /\|/ && !/^ *#/ { print }' "$EX"
+    awk '/^[[:space:]]*```/ { fence = !fence; next } fence { next } /\|/ && !/^ *#/ { print }' "$EX"
 } > "$TMP/alltables.md"
 check "every table in the example, extracted by nothing but a pipe" 0 "$TMP/alltables.md" \
       report "$TMP/alltables.md" --require-heading "Tables"

@@ -423,11 +423,20 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
         # nothing at all and U+2212 renders exactly like a hyphen.
         line = re.sub(r"<!--.*?-->", "", line, flags=re.S)
         line = re.sub(r"&nbsp;|&#160;|&#xa0;", "", line, flags=re.I)
-        # Emphasis is stripped EVERYWHERE, not only at end of line. With a bold label the closing
-        # ** sits between the colon and the answer ("- **Commit:** \u2015"), so a trailing-only
-        # strip left a '*' where the match needed whitespace and the bullet read as answered.
-        line = re.sub(r"[*`]", "", line)
-        return re.sub(r"[_\u00ad\u200b-\u200d\u2060\ufeff\s]+$", "", line)
+        # Emphasis is stripped EVERYWHERE inside the bullet, not only at end of line: with a bold
+        # label the closing ** sits between the colon and the answer ("- **Commit:** \u2015"), so a
+        # trailing-only strip left a '*' where the match needed whitespace and the bullet read as
+        # answered. The list MARKER is split off first and put back untouched, because '*' is a
+        # legal bullet marker: stripping it globally deleted the marker, the empty-bullet pattern
+        # then failed to match its own input, and every unanswered bullet in an asterisk-marked
+        # list went unreported. The blank template lost 2 of its 15 findings that way.
+        m = re.match(r"(\s*[-*]\s+)(.*)", line)
+        if not m:
+            return line
+        marker, body = m.group(1), m.group(2)
+        body = re.sub(r"[*`]", "", body)
+        body = re.sub(r"[_\u00ad\u200b-\u200d\u2060\ufeff\s]+$", "", body)
+        return marker + body
 
     empty = [l.strip() for l in bullets
              if re.match(r"\s*[-*]\s+.*:\s*([-_.\u00ad\u2010-\u2015\u2212]+|\.{2,})?\s*$",

@@ -19,7 +19,7 @@ Method (floor → screen → predict → build) lives in `05-perf-method-and-roo
 | Is the host or the device the bottleneck? | bare synced wall clock minus the summed device kernel time; explain the residual with a host trace | `time.perf_counter()` + `ttnn.synchronize_device()`; `py-spy record` / `cProfile` on the same region |
 | Why is the second call cheaper than the first? | run the same shape twice in one process and diff; compile lands in the op-to-op gap, not in a kernel | see §5 warm/cold; `~/.cache/tt-metal-cache` and `enable_program_cache()` |
 | How many ops does one step dispatch? | `ttnn.graph` capture around one iteration (works on the pip wheel, no Tracy build) | count `function_end` nodes whose `params.name` starts with `ttnn.` |
-| What is this op's peak L1 usage? | `ttnn.graph.extract_peak_L1_memory_usage` on a **cold** call | a warm capture reads 0, see below |
+| What is this op's peak L1 usage? | `ttnn.graph.extract_peak_L1_memory_usage` on a **cold** call | a warm capture drops the circular buffers, see below |
 | Is my optimized path actually firing? | an assertion or an explicit counter in the code, incremented on the line that does the work | never a timing inference, never a flag read (§5) |
 | Is dispatch the cost? | eager vs traced A/B on an idle host | `ttnn-trace-capture` procedure; if traced ≈ eager, dispatch was not the problem |
 | Is the matrix engine busy? | hardware perf counters, FPU group | `--profiler-capture-perf-counters=fpu,instrn` (budget cost: §3) |
@@ -144,10 +144,13 @@ triggered it. Never read a gap distribution from a cold capture.
 | **A counter or flag named after an optimization tells you the path was requested, not that it ran.** A merged L1-residency win never fired in any real fold: its guard tested `M % 32` on the *logical* flattened M, while TILE_LAYOUT pads before `fuse_batch` folds the leading dims, so the real M is `prod(leading) * ceil32(rows)`. Both arms of its validating A/B ran identical code, so the result was bit-exact and looked like a clean pass. A separate case: an upstream fused-kernel fallback counter read 0 for the entire run while the fallback was firing. And a kernel-variant counter tells you which kernel ran, never what dtype flowed through it. | Assert on the line that does the work, not on the flag that requests it. Count admits *and* rejects, and print both. Then prove the guard admits on a real model input, not on a synthetic benchmark shape: standalone harnesses feed N=128/256/320/384, all tile multiples, so a broken tile predicate never trips there. |
 | **A number measured on a quietly faulty or thermally limited card is unreproducible anywhere else.** One card was root-caused as silently miscomputing some matmuls at a low, location-keyed rate at every size, with 64 of 130 cores never hit; 15 clean folds on it proved nothing about the next one. Thermal drift is the milder version: all-A-then-all-B legs read +13.3 % where the honest interleaved answer was +5.2 %. | Interleave A/B legs (A,B,A,B) and compare medians, never all-A-then-all-B. Re-run any surprising result on a second card before believing it. Never let a bit-exact or hash-equality check land on a card that has ever failed one. Host contention is one-sided noise (it can only slow a rep down), so for that class the robust statistic is the **min** of N reps, not the median. |
 
-One more that belongs with these: `ttnn.graph.extract_peak_L1_memory_usage` reports the allocation
-the traced call performs, so a call whose buffers the program cache already holds reports 0. Capture
-it on a **cold** call, in a fresh process or before the shape has run once. A 0 is not "this op is
-free", it is "this op allocated nothing this time".
+One more that belongs with these: `ttnn.graph.extract_peak_L1_memory_usage` sums two terms, circular
+buffers and L1 buffers, and a program-cache hit silently removes the first. `Program::allocate_circular_buffers`
+skips `track_allocate_cb` entirely when `local_circular_buffer_allocation_needed_` is false and the
+device is already in `cb_devices_`, which is exactly the warm case; the L1 tensor allocations are
+still counted. So a warm capture returns a plausible nonzero number that omits every circular buffer,
+and for a compute op the circular buffers are usually the larger term. Capture on a **cold** call, in
+a fresh process or before that shape has run once.
 
 Three more the same table would cover if it were longer: the profiler perturbs what it measures, so
 attribute with it and time A/B without it, and never mix the two in one table; `PM FPU UTIL (%)` is
