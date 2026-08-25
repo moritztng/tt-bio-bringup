@@ -74,9 +74,16 @@ does not object: that test allowlists root *files* only.
 Work them in order. Each phase has an exit gate that is a command. Do not start a phase before its
 predecessor's gate exits 0, and do not start a phase before reading the reference docs it names.
 
-Every gate below is written for a model called `yourmodel`. Substitute your own name, and substitute
-your card number for `$CARD`. `TT_VISIBLE_DEVICES` is not optional on a multi-card host: unpinned,
-pytest brings up every card on the box and takes them from whoever else is using them.
+Every gate below is written for a model called `yourmodel`; substitute your own name. `$CARD` is the
+card you are working on, from the `/dev/tenstorrent/<n>` column of `tt-smi -ls`; set it once per shell:
+
+```bash
+export CARD=0
+```
+
+`TT_VISIBLE_DEVICES` is not optional on a host with cards. Unpinned, pytest brings up every card on
+the box and takes them from whoever else is using them, which is why the conftest refuses the session
+rather than guessing.
 
 For each gate, run it, then prove it can fail:
 
@@ -87,8 +94,8 @@ python3 scripts/port_gate.py prove-red \
     --restore '<the inverse edit>'
 ```
 
-A gate you have not watched go red is not a gate. That is the single most common defect in this
-domain and `prove-red` exists so that checking costs you one command.
+A gate you have not watched go red is not a gate. `prove-red` exists so that checking costs one
+command instead of a decision, which is the only reason it actually gets done.
 
 ### Phase 0 - Map the model (no device code)
 
@@ -167,9 +174,13 @@ python3 scripts/port_gate.py determinism \
     --artifact /tmp/fw.npy
 ```
 
-The weight test asserts a count, not a name list: `assert consumed == set(state_dict)` in both
-directions, so an unconsumed parameter and an invented one both fail. Prove it red by deleting one
-key from your remap.
+The weight test asserts set equality, `assert consumed == set(state_dict)`, not a loop over the names
+it happens to know about. Both directions matter: a remap that drops a parameter and a remap that
+invents one are different bugs, and a one-directional check catches only one of them. Prove it red by
+deleting one key from your remap.
+
+`$CARD` is single-quoted inside `--run` on purpose. `port_gate.py` runs the command through `bash -c`,
+which expands it there from the environment you exported it into.
 
 ### Phase 3 - Component parity, leaves first
 
