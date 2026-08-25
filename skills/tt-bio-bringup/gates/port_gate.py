@@ -123,15 +123,26 @@ def _is_separator(line: str) -> bool:
     return bool(re.fullmatch(r"\|?[\s:|-]*-[\s:|-]*\|?", line.strip())) and "-" in line
 
 
+def _is_row(line: str) -> bool:
+    """A table row. GFM makes the leading and trailing pipes optional, and renderers agree.
+
+    Requiring a leading `|` meant a row written without one ended the table early and every
+    check below simply never saw it: a control that stayed green, a module with no golden, a
+    threshold that is a pointer. It rendered as an ordinary row the whole time.
+    """
+    s = line.strip()
+    return bool(s) and "|" in s and not s.startswith("#") and not s.startswith("```")
+
+
 def parse_tables(text: str) -> list[Table]:
     lines = text.splitlines()
     tables: list[Table] = []
     i = 0
     while i < len(lines):
-        if lines[i].lstrip().startswith("|") and i + 1 < len(lines) and _is_separator(lines[i + 1]):
+        if _is_row(lines[i]) and i + 1 < len(lines) and _is_separator(lines[i + 1]):
             t = Table(i + 1, _cells(lines[i]))
             i += 2
-            while i < len(lines) and lines[i].lstrip().startswith("|"):
+            while i < len(lines) and _is_row(lines[i]) and not _is_separator(lines[i]):
                 t.rows.append((i + 1, _cells(lines[i])))
                 i += 1
             tables.append(t)

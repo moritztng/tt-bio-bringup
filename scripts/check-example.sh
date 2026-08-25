@@ -32,8 +32,8 @@ table() {
     awk -v key="$1" '
         /^```/ { fence = !fence; next }
         fence { next }
-        $0 ~ /^\|/ && index($0, key) { on = 1 }
-        on && /^\|/ { print; next }
+        $0 ~ /\|/ && !/^ *#/ && index($0, key) { on = 1 }
+        on && /\|/ && !/^ *#/ { print; next }
         on { exit }
     ' "$EX"
 }
@@ -44,8 +44,8 @@ count_tables() {
     awk -v key="$1" '
         /^```/ { fence = !fence; next }
         fence { next }
-        /^\|/ && index($0, key) && !prev { n++ }
-        { prev = /^\|/ }
+        /\|/ && !/^ *#/ && index($0, key) && !prev { n++ }
+        { prev = (/\|/ && !/^ *#/) }
         END { print n + 0 }
     ' "$EX"
 }
@@ -151,7 +151,7 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
         fence { next }
         /^\*\*Negative controls\*\*/ { on = 1; next }
         on && /^#/ { exit }
-        on && /^\|/ { print }
+        on && /\|/ && !/^ *#/ { print }
     ' "$EX"
 } > "$TMP/parity_all.md"
 check "every table the example puts under Negative controls" 0 "$TMP/parity_all.md" \

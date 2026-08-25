@@ -54,6 +54,7 @@ NFILES=$(tr -cd '\0' < "$FILELIST" | wc -c)
 # patterns; nobody inherits anyone else's vocabulary.
 PATTERNS=(
   'private ssh key|BEGIN [A-Z ]*PRIVATE KEY'
+  'key or credential file|\b(id_rsa|id_dsa|id_ecdsa|id_ed25519)\b|\.(pem|p12|pfx|jks|keystore|kdbx)\b|\bcredentials\.json\b|\.npmrc\b|\.pypirc\b'
   'github token|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}'
   'llm api key|\bsk-[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9]){19,}'
   'aws key|\bAKIA[0-9A-Z]{16}\b'
@@ -77,7 +78,10 @@ LOCAL="$(dirname "$0")/redaction-local.txt"
 if [ -f "$LOCAL" ]; then
   n=0
   while IFS= read -r line; do
-    line=${line%%#*}; line=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
+    # Only a '#' preceded by whitespace is a comment. Stripping at the first '#' anywhere
+    # silently truncated "bldg#3|projectzeus" to "bldg", and the "loaded 1 pattern" line then
+    # asserted a pattern that was not the one written.
+    line=$(printf '%s' "$line" | sed -e 's/[[:space:]]\+#.*$//' -e 's/[[:space:]]*$//')
     [ -z "$line" ] && continue
     # Validate it. An invalid PCRE makes grep error on every file, the error goes to /dev/null,
     # the pattern matches nothing, and the run still says clean. That is the whole failure this
@@ -105,8 +109,14 @@ for entry in "${PATTERNS[@]}"; do
   # pattern for that line, and these documents tell the reader to write those URLs: a planted AWS
   # key on the same line as the repo's own URL read clean. The scanner's own file is still
   # skipped by name, which is a whole-file exemption and deliberate.
-  hits=$(grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
-    | xargs -0 grep -anPi -- "$rx" 2>/dev/null \
+  # Contents, and then the PATHS. A path is published exactly as the bytes inside the file are,
+  # and scanning only contents meant "notes/rack3-alice-a@b.com.md" shipped and read clean: the
+  # email, host and home-path patterns would all have fired one byte to the right.
+  hits=$( { grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
+              | xargs -0 grep -anPi -- "$rx" 2>/dev/null
+            grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
+              | tr '\0' '\n' | grep -aPi -- "$rx" | sed 's|^|FILENAME: |'
+          } \
     | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
           -e 's|git@github\.com|ALLOWED|gI' \
           -e 's|example\.com|ALLOWED|gI' \
