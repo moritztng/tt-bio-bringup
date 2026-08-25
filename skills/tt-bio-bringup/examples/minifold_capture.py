@@ -194,9 +194,10 @@ def main() -> None:
         "reference_version": "0.1.0",
         "reference_commit": "0000000",
         "settings": {"length": args.len, "dtype": "fp32", "device": "cpu"},
-        "seeds": [args.seed],
+        "seeds": [args.seed] if not args.unpinned else [],
         "command": f"python3 minifold_capture.py --len {args.len} --seed {args.seed}",
-        "provenance": "CPU torch reference, fp32, deterministic algorithms on",
+        "provenance": ("CPU torch reference, fp32, deterministic algorithms on" if not args.unpinned
+                       else "UNPINNED: no seeding, no eval(), NOT a golden. Delete this fixture."),
         "runtime_s": round(runtime_s, 3),
         "invalidation_rule": "regenerate if reference_commit, length or settings change",
     }, indent=1, sort_keys=True) + "\n")
