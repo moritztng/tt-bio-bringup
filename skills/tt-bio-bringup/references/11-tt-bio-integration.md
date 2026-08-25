@@ -32,7 +32,7 @@ Two layouts are in use, both correct. Pick one; do not mix them for a single mod
 **A package** when the port exceeds roughly ten modules or ships its own featurizer tree:
 `tt_bio/yourmodel/{featurize,weights,remap,model,sampler,confidence,host}.py` with a docstring-only
 `__init__.py` saying what each module is for. OpenFold3 in the tree uses the flat form
-(`tt_bio/openfold3_*.py`, 15 files); a later port uses the package form.
+(`tt_bio/openfold3_*.py`, 14 files); a later port uses the package form.
 
 Split on **pipeline stage**, never on "utils". A file named `yourmodel_utils.py` is where the
 unification rule goes to die: it is the natural home for a private copy of something shared.

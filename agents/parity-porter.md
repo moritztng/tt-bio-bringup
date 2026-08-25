@@ -10,8 +10,9 @@ The reference documents ship with the `tt-bio-bringup` skill, not with the repos
 working in, so a bare relative path will not resolve. Locate them first:
 
 ```bash
-find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
-     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+REFS=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+       -type d -name references -path '*tt-bio-bringup*' 2>/dev/null | head -1)
+test -n "$REFS" || echo "tt-bio-bringup references not found; say so and stop"
 ```
 
 Read `02-parity-and-correctness.md` and `03-precision-and-numerics.md` from that directory, plus `04-shapes-tiles-and-bucketing.md` if the module has a variable-length axis. If you cannot find the

@@ -265,7 +265,7 @@ external was compared. Treat it as a bug report on the gate.
 - `bf16 -> fp32 -> bf16` round-trips. bf16→fp32 is zero-extension; fp32→bf16 of an already-bf16 value is the
   identity. Removing a host sync between two bf16-native tensors gives maxdiff 0, PCC 1.0. Void if either side is
   a different dtype, or if the "sync" also does real work (a cast, a reduction).
-- **Bucketing on a masked axis**, as all three of pad + mask + slice-back: pad the ids, add a `-inf` additive
+- **Bucketing on a masked axis**, as all three of pad + mask + slice-back: pad the ids, add a `-1e9` additive
   mask, **and zero the padded keys and values** so exactness does not rest on bf16 `exp(-inf)`. Verify PCC == 1.0
   and maxdiff == 0 against the unpadded run.
 - Host-side code you did not touch.
@@ -291,7 +291,7 @@ at every aligned one**; uninitialized tile padding left by a scatter fed `-inf`/
 fold into a softmax, moving coordinates 0.335 Å.
 
 Consequences for parity: bucket every token axis to a multiple of 32, reusing the shared constants in
-`tt_bio/tenstorrent.py`, and grep the **shared** module when auditing whether a port buckets. **Bucketing hides a
+`tt_bio/token_axis.py`, and grep that module when auditing whether a port buckets. **Bucketing hides a
 ragged-input kernel bug, it does not fix it**: fix the kernel too and keep a ragged fixture so it stays visible.
 A per-op screen run only at 128 and 512 tokens is correct and blind simultaneously.
 

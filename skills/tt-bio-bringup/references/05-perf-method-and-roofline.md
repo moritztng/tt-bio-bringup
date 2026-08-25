@@ -144,7 +144,9 @@ attainable = min(compute_roof, AI * bandwidth_roof)
 `AI < machine_balance` means bandwidth-bound and it can never reach compute peak, whatever the FPU
 counter says. `AI > machine_balance` means compute-bound.
 
-Reference intensities: a square matmul is `2N/3` FLOP/byte, so it only crosses 231 above **N≈350**.
+Reference intensities: with the FLOP and byte counts above (`2N³` FLOPs against `6N²` bytes), a square matmul is
+`N/3` FLOP/byte, so it only crosses 231 above **N≈693**. Below that a matmul cannot be compute-bound however you
+block it, which is most projections in a bio trunk.
 An eltwise add is fixed at **0.17 FLOP/byte**, three orders of magnitude short. Almost nothing in a
 biomolecular model clears 231, which is why these workloads are bandwidth- and latency-bound in
 practice, and why "add more FLOPs cheaply" (fusion, precision) usually beats "do fewer FLOPs".

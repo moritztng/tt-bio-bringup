@@ -16,9 +16,7 @@ skills/tt-bio-bringup/
   references/               14 reference documents, loaded on demand
   templates/                the documents the workflow expects you to keep
   gates/port_gate.py        the gate checker the phases call, standard library only
-examples/
-  worked-example.md         one small model through every phase, with the gate output
-  minifold_capture.py       the Phase 1 golden capture, runnable with torch and no card
+  examples/                 one small model through every phase, plus a runnable Phase 1 capture
 agents/                     subagent definitions for five recurring roles
 scripts/redaction-check.sh  the check that keeps this repo publishable
 ```
@@ -75,13 +73,18 @@ ln -s ../../third_party/tt-bio-bringup/skills/tt-bio-bringup .claude/skills/tt-b
 cp third_party/tt-bio-bringup/agents/*.md .claude/agents/
 ```
 
-Check it took: `/skills` lists `tt-bio-bringup`, and the reference documents are where the subagents
-look for them:
+Check it took. Two things about that command: `-L` is required because the install above is a
+symlink and plain `find -type d` will not descend into one, and the result has to be tested rather
+than read, because `find | head -1` exits 0 when it matched nothing.
 
 ```bash
-find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
-     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+        -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
+test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
+    echo "NOT installed: nothing matched"; false; }
 ```
+
+`/skills` should also list `tt-bio-bringup`.
 
 ## Using it
 
@@ -103,9 +106,10 @@ than read about it.
 Three things to hold Claude to, because they are what make the difference:
 
 1. **No phase starts before the previous gate exits 0**, and a gate is a command you can run, not a
-   summary paragraph. All eight are commands, and four of them are `gates/port_gate.py`.
+   summary paragraph. All eight are commands, and five of them call `gates/port_gate.py`.
 2. **No performance number without a matched-protocol A/B**: same shapes, same batch, same warm
-   state, same card, repeated runs, median reported.
+   state, same card, repeated runs, and the statistic named. Median for symmetric noise, **min** when
+   the noise is one-sided, which host contention is (`05-perf-method-and-roofline.md` §11).
 3. **Break every green check once** to prove it can go red. A test that cannot fail is not evidence.
    `port_gate.py prove-red --check ... --break ... --restore ...` does the whole sequence and reads
    the exit codes for you, so this costs one command rather than a decision.

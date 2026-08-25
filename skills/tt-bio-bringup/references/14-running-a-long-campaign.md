@@ -170,7 +170,7 @@ is physically opened, so a second opener fails cleanly instead of corrupting bot
 ```bash
 exec 9>"$HOME/.tt-leases/card${N}.lock"
 flock -n 9 || { echo "card $N leased by someone else"; exit 1; }
-TT_VISIBLE_DEVICES=$N python -m tt_bio.cli predict ...
+TT_VISIBLE_DEVICES=$N ./env/bin/tt-bio predict ...
 ```
 
 The strongest version puts the `flock` inside the device-open helper itself, so it cannot be

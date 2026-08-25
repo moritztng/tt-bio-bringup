@@ -13,7 +13,7 @@ python3 scripts/port_gate.py report docs/yourmodel-perf.md \
 - Chip generation, card, host:
 - Package versions:
 - Command:
-- Warm-up policy, repeats, statistic reported (median):
+- Warm-up policy, repeats, statistic reported (median, or min if the noise is one-sided):
 
 ## Measured roofs
 

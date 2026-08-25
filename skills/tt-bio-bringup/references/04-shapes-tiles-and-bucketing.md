@@ -185,7 +185,8 @@ and nowhere else.
   bit-exact. **Not** universal: on another port's upload mix this measured net slower. Profile the upload path.
 - **Permutes are not equal.** The last-two transpose `(0,1,3,2)` hits a fast path, ~368 GB/s. A channel-move
   permute `(0,3,1,2)` is a full cross-tile re-tile (untilize, blocked transpose, retilize) and measured
-  **55 GB/s, ~11% of the ~500 GB/s roof**. On one triangle-multiplication op at N=1024 that single permute was
+  **55 GB/s, 12.6% of the measured 435.2 GB/s roof** (not the 512 GB/s datasheet figure). On one
+  triangle-multiplication op at N=1024 that single permute was
   **70.4 of 118.1 ms (60%)** while the contraction matmul ran near peak (48 TFLOP/s) in under 5% of the time. The
   fix is structural: keep the tensor channel-major through the chunk loop, or fold the transpose into the matmul
   operand read (`transpose_b`).

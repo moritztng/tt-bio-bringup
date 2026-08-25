@@ -16,8 +16,9 @@ circular-buffer clash, or deciding whether to keep state on device between calls
 | Device DRAM | 32 GB on a p150-class Blackhole part, ~12 GB per Wormhole chip | interleaved over 8 banks (Blackhole) / 12 (Wormhole) | ttnn allocator |
 | Host RAM | whatever the box has | pageable | Python/torch |
 
-Aggregate L1 is small but not negligible: 110 cores x 1,532,416 B = 168.57 MB. A `[512, 512, 256]`
-bf16 pair tensor is 134.22 MB, 79.6% of all L1 on the chip. That kills most naive "keep the pair
+Aggregate L1 is small but not negligible: 110 cores x 1,461,760 B = 160.8 MB, using the allocator's
+per-bank figure rather than the device's reported total for the reason in §4. A `[512, 512, 256]`
+bf16 pair tensor is 134.22 MB, 83.5% of all L1 on the chip. That kills most naive "keep the pair
 track resident" plans.
 
 **The mental shift from CUDA.** There is no cache hierarchy. L1 is an explicitly addressed per-core
@@ -29,7 +30,9 @@ L1 buffers on core range [...]` instead of an out-of-memory error. That message 
 problem, not a capacity problem.
 
 Do not quote datasheet bandwidths; measure them (`05-perf-method-and-roofline.md`). Measured on one
-Blackhole part: DRAM read roof 435.3 GB/s, write roof 277.6 GB/s, compute roof 137.1 TFLOP/s (one
+Blackhole part: DRAM read roof 435.2 GB/s, write roof 277.6 GB/s, compute 161.14 TFLOP/s at LoFi and
+100.55 at HiFi4 (`05-perf-method-and-roofline.md` §3 measures all three fidelities; most bio ops run
+HiFi4, so quote that one) (one
 data-movement RISC issuing a writeback reaches only ~59% of the write roof).
 
 `ttnn.get_max_worker_l1_unreserved_size()` is **not** the number to budget against: on Blackhole it

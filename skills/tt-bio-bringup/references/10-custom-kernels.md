@@ -14,7 +14,7 @@ Do not open an editor on a `.cpp` until all four hold. Write the answers down as
 
 | Gate | Passing condition | Where the number comes from |
 | --- | --- | --- |
-| Share | Target op or chain is >=10% of warm end-to-end time at production size | Op census inside the real forward (`05-perf-method-and-roofline.md`), not a microbenchmark |
+| Share | Target op or chain is >=10% of warm end-to-end time at production size. Higher than the campaign-wide effort bar in `05-perf-method-and-roofline.md` §1 on purpose: this is the most expensive lever per unit of effort, so it earns a higher bar than the cheap ones | Op census inside the real forward, not a microbenchmark |
 | Headroom | Current composition sits far below its **measured** roof, typically <50% | Roofline with a roof measured on this board, not a datasheet figure |
 | No existing op | No `ttnn` op and no fused `ttnn` op covers the pattern | Audit the sequence against the `ttnn` op list, `ttnn.experimental` included |
 | Amdahl | `1 / (1 - share)` is a speedup you would ship | Arithmetic. A component at 10.9% of the stack caps a perfect kernel at 1.12x |
@@ -258,7 +258,8 @@ silently resolves to a stock wheel fails, or hangs, on every path with no fallba
 ## 8. When it hangs
 
 A buggy kernel hangs the card, and a hung card blocks cluster discovery for every other device on
-the host regardless of visibility settings. `SIGTERM` the process first, never `SIGKILL`, then
+the host regardless of visibility settings. `SIGINT` the process first, never `SIGTERM` or `SIGKILL`
+(both skip the device close and can leave the chip dirty), then
 reset; full procedure in `09-devices-and-hardware-operations.md`. Run kernel experiments under `timeout`, and never
 scope a wait-loop to a shared script basename: it matches another job's process, or its own, and
 waits forever.

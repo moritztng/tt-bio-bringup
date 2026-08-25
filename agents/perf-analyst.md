@@ -10,8 +10,9 @@ The reference documents ship with the `tt-bio-bringup` skill, not with the repos
 working in, so a bare relative path will not resolve. Locate them first:
 
 ```bash
-find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
-     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+REFS=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+       -type d -name references -path '*tt-bio-bringup*' 2>/dev/null | head -1)
+test -n "$REFS" || echo "tt-bio-bringup references not found; say so and stop"
 ```
 
 Read `05-perf-method-and-roofline.md` and `06-profiling-instruments.md` from that directory. If you cannot find the

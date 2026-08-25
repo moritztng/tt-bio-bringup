@@ -73,8 +73,11 @@ with zero host dispatch.
 many tiny atom-level matmuls, a score model went 38.4 → 26.7 ms/step partially traced, 17.1 ms/step whole-step.
 
 **How to predict the win.** Multiply the loop body's op count by ~17–20 µs of per-program dispatch, compare to measured
-wall. One trunk at 298 residues measured 91.5% host-dispatch-bound (43.6 ms device per block against 648 ms wall): a
-candidate. A 512-residue diffusion loop measured 31.9 s traced vs 31.7 s eager: not.
+wall, then confirm the prediction with a warm eager-vs-traced A/B before writing any capture code. Both halves are
+load-bearing. A "91.5% host-dispatch-bound" headline for one folding trunk was a unit slip
+(`05-perf-method-and-roofline.md` §5 has the arithmetic); measured directly, that trunk was device-compute-bound and
+the trace would have bought zero. A 512-residue diffusion loop measured 31.9 s traced against 31.7 s eager, and was
+not a candidate either.
 
 **How to implement.** Reserve `trace_region_size` at `ttnn.open_device` (it cannot be added later),
 `enable_program_cache()` before warmup, run one warmup pass to compile every kernel, pre-allocate persistent input
@@ -334,7 +337,7 @@ sparse-indirection primitive, and do not assume a fused kernel rescues it. The o
 ## 10. Bucketing and recompilation avoidance
 
 **What it is.** Padding a variable-length axis to a fixed multiple so different inputs reuse compiled kernels. Full
-treatment in `05-perf-method-and-roofline.md`; this is the ranking summary.
+treatment in `04-shapes-tiles-and-bucketing.md` §5; this is the ranking summary.
 
 **When it pays.** When per-shape JIT compile dominates: ~0.85 s per new shape for a small LM, tens of seconds for a
 folding trunk. Compiles are disk-cached (`~/.cache/tt-metal-cache`), so it is one-time per shape per machine; an

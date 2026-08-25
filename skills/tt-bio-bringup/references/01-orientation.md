@@ -63,8 +63,14 @@ See `11-tt-bio-integration.md` for the file-by-file conventions.
 
 ## Day zero: getting to the starting line
 
-Nothing below is Tenstorrent-specific expertise. It is the install, and it has to work before any of
-the rest of this skill means anything.
+Nothing below is Tenstorrent-specific expertise. It is the install.
+
+**You do not have to wait for it.** Phase 0 and Phase 1 are card-free by construction: mapping the
+model and capturing a CPU golden need torch and nothing else, and they are usually a week of work. If
+your hardware is still in a box, or the driver is not up yet, start Phase 0 now and do day zero in
+parallel. What you cannot do is enter **Phase 2**, where the first device code runs, before steps 3
+to 5 below pass. Two Phase 0 fields do want the hardware (chip generation and card count): write your
+intent, mark it unconfirmed, and confirm it at step 3.
 
 **1. Fork and clone tt-bio.** Fork `https://github.com/moritztng/tt-bio` on GitHub, then:
 
@@ -79,12 +85,18 @@ The `upstream` remote is how you rebase later, and adding it now costs nothing.
 **2. Build the environment.** Python 3.10 or 3.12; 3.11 is not supported:
 
 ```bash
-python3.10 -m venv env
+python3.10 -m venv env     # or python3.12; check with: ls /usr/bin/python3.1*
 source env/bin/activate
 pip install -e '.[tenstorrent]'
 tt-bio install-deps        # Tenstorrent system dependencies for this release; may ask for sudo
 tt-bio --help              # if this prints the CLI, the install took
 ```
+
+If neither 3.10 nor 3.12 is on the host, install one rather than trying 3.11: the bound is
+`requires-python = ">=3.10,<3.13,!=3.11.*"` in upstream's `pyproject.toml`, so pip refuses 3.11
+outright and there is no flag that talks it round. `apt install python3.12-venv` on a recent Debian
+or Ubuntu, or `uv python install 3.12`, or pyenv. Whichever you pick, `./env/bin/python3` afterwards
+is the interpreter every command in this skill means.
 
 Every command in this skill assumes that `env` is active. Activate it in every new shell, and when
 you write a script or a gate that runs as a subprocess, give it the interpreter explicitly
@@ -101,8 +113,12 @@ It lists every board on the host with its chip generation and its `/dev/tenstorr
 the chip generation and the count into `notes/PORT_STATE.md`. Every performance claim you make from
 here on has to name that hardware, because Wormhole and Blackhole numbers are not comparable.
 
-The logical IDs `tt-smi` shows and the `/dev/tenstorrent/<n>` node numbers are not always the same
-number, and `TT_VISIBLE_DEVICES` takes the node number. Read both columns before pinning a card.
+`tt-smi -ls` prints two numbers per card and they are **not the same number** on a multi-card host:
+the UMD chip ID (PCI BDF order) and the `/dev/tenstorrent/<n>` kernel node. `TT_VISIBLE_DEVICES`,
+`ttnn`'s device ids, `tt-smi -r` and `--device_ids` all take the **UMD chip ID**. The node number is
+what `lsof`, `/proc/<pid>/fd` and dmesg show you, so it is the one you use to find out who is holding
+a card, and it is the wrong one to pin with. Full treatment in
+`09-devices-and-hardware-operations.md` §1, including how to extract the live mapping.
 
 **4. Run the existing suite, before you change anything.**
 
@@ -142,18 +158,33 @@ If steps 3 to 5 all pass, you are at the starting line.
 Phase 0 of `SKILL.md`. Copy the templates in, write the plan, and run the gate on it:
 
 ```bash
-SKILL=$(find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d \
-        -name 'tt-bio-bringup' -path '*skills*' 2>/dev/null | head -1)
+# Where the skill's files are. An install, or the clone you made to read this.
+SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+        -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
+: "${SKILL:=/path/to/your/clone/of/tt-bio-bringup/skills/tt-bio-bringup}"
+test -f "$SKILL/SKILL.md" || { echo "set SKILL to the skill directory"; }
+
 mkdir -p notes scripts
 cp "$SKILL/templates/PORT_PLAN.md" "$SKILL/templates/PORT_STATE.md" notes/
 cp "$SKILL/gates/port_gate.py" scripts/
-sed -i '/^\/notes\/$/d' .gitignore        # your fork keeps its planning; upstream's does not
 
-python3 scripts/port_gate.py plan notes/PORT_PLAN.md      # red now, and it says why
+# Upstream ignores /notes/ because its planning lives elsewhere; yours does not.
+grep -qE '^/?notes/?$' .gitignore && sed -i -E '/^\/?notes\/?$/d' .gitignore
+git check-ignore notes/PORT_PLAN.md && echo "still ignored, fix .gitignore by hand"
+
+./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md   # red now, and it says why
 ```
 
-Then fill `notes/PORT_PLAN.md` in until that command exits 0. It will not exit 0 while any module
-lacks a named golden, which is the one thing Phase 0 exists to force.
+The `test -f` line matters: `find` exits 0 when it matches nothing, so on a plain clone with nothing
+installed `$SKILL` comes back empty and the `cp` fails with a path that looks like a bug in this
+document. If that happens, point `SKILL` at your clone.
+
+The `grep -qE` guard matters for the same reason in reverse: upstream's rule is `/notes/`, but a
+`sed` written for one spelling exits 0 having changed nothing if the file says `notes/` instead, and
+then your plan stays untracked and the next session cannot find it. `git check-ignore` is the check
+that would have caught it.
+
+Then fill `notes/PORT_PLAN.md` in until the gate exits 0.
 
 ## The vocabulary you will see in the reference docs
 

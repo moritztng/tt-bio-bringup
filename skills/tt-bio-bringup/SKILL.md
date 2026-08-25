@@ -46,12 +46,21 @@ are porting into. Find them once, at the start of the session, and pass the path
 spawn:
 
 ```bash
-find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
-     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+        -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
+test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
+    echo "NOT installed: nothing matched"; false; }
 ```
 
-`gates/port_gate.py` sits beside `references/`. Copy it into your fork as `scripts/port_gate.py`
-before Phase 0; every gate below calls it. It is standard library only.
+Two details, both load-bearing. `-L` follows symlinks, and the personal install is a symlink, so
+plain `find -type d` returns nothing on a correctly installed skill. And test the result rather than
+reading it, because `find` exits 0 when it matched nothing, so a missing skill looks like a
+successful search. `references/`, `templates/` and `gates/` are all under `$SKILL`.
+
+If nothing matched, you are working from a plain clone rather than an install. That is fine: use the
+clone's own path as `$SKILL`. Copy `$SKILL/gates/port_gate.py` into your fork as
+`scripts/port_gate.py` before Phase 0, because every gate below calls it. It is standard library
+only.
 
 ## Where the port's own documents live
 
@@ -74,21 +83,33 @@ does not object: that test allowlists root *files* only.
 Work them in order. Each phase has an exit gate that is a command. Do not start a phase before its
 predecessor's gate exits 0, and do not start a phase before reading the reference docs it names.
 
-Every gate below is written for a model called `yourmodel`; substitute your own name. `$CARD` is the
-card you are working on, from the `/dev/tenstorrent/<n>` column of `tt-smi -ls`; set it once per shell:
+Every gate below is written for a model called `yourmodel`; substitute your own name. Gate commands
+name `./env/bin/python3` rather than a bare `python3`, because a gate that silently ran under the
+system interpreter has measured the wrong thing, and that is not visible in its output.
+
+`$CARD` is the **UMD chip ID** of the card you are working on, from `tt-smi -ls`. Not the
+`/dev/tenstorrent/<n>` node number, which is a different number on a multi-card host and pins a
+different card; `09-devices-and-hardware-operations.md` §1 has both and the mapping. Set it once per
+shell:
 
 ```bash
 export CARD=0
 ```
 
-`TT_VISIBLE_DEVICES` is not optional on a host with cards. Unpinned, pytest brings up every card on
-the box and takes them from whoever else is using them, which is why the conftest refuses the session
-rather than guessing.
+Every device gate below writes `${CARD:?set CARD first}` rather than `$CARD`, and that is
+load-bearing. With `CARD` unset, `TT_VISIBLE_DEVICES=$CARD` expands to `TT_VISIBLE_DEVICES=`, which
+is *set but empty*, which the conftest reads as a deliberate CPU-only run. Every device test skips and
+pytest exits 0. The gate for "every reference parameter is consumed exactly once" then reports green
+having opened no device and asserted nothing. `${CARD:?}` makes the shell refuse instead.
+
+`TT_VISIBLE_DEVICES` is not optional on a host with cards. Left out entirely, the conftest refuses the
+session rather than guessing, because ttnn brings up every card it can see and an unpinned run takes
+the whole box from whoever else is using it.
 
 For each gate, run it, then prove it can fail:
 
 ```bash
-python3 scripts/port_gate.py prove-red \
+./env/bin/python3 scripts/port_gate.py prove-red \
     --check   '<the gate command>' \
     --break   '<the smallest edit a real regression would make>' \
     --restore '<the inverse edit>'
@@ -99,8 +120,8 @@ command instead of a decision, which is the only reason it actually gets done.
 
 ### Phase 0 - Map the model (no device code)
 
-Read: `references/01-orientation.md`, and `references/02-parity-and-correctness.md` §1 for the
-fixture and threshold conventions the plan has to name. `examples/worked-example.md` in the repository
+Read: `references/01-orientation.md`, plus `references/02-parity-and-correctness.md` §1.2-1.4 for
+the fixture conventions and §3.4 for how thresholds get chosen, because the plan has to name both. `examples/worked-example.md`
 shows a filled-in plan for a small model, with the gate output, if you would rather see one than read
 about one.
 
@@ -123,7 +144,7 @@ Produce `notes/PORT_PLAN.md` from `templates/PORT_PLAN.md`:
 **Exit gate:**
 
 ```bash
-python3 scripts/port_gate.py plan notes/PORT_PLAN.md
+./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md
 ```
 
 Exit 0 requires every section present, every table row filled, every module carrying a named golden
@@ -141,10 +162,10 @@ config inside each fixture.
 agrees with it.
 
 ```bash
-python3 scripts/port_gate.py determinism \
-    --run 'python3 scripts/yourmodel_port/capture.py --len 117 --seed 0' \
+./env/bin/python3 scripts/port_gate.py determinism \
+    --run './env/bin/python3 scripts/yourmodel_port/capture.py --len 117 --seed 0' \
     --artifact scripts/yourmodel_port/parity_artifacts/blocks_117.pt
-python3 -m pytest tests/test_yourmodel_fixtures.py -q
+./env/bin/python3 -m pytest tests/test_yourmodel_fixtures.py -q
 ```
 
 The determinism arm deletes the artifact first, so a run that exits 0 without writing it fails
@@ -168,9 +189,9 @@ slow. It is allowed to be numerically off. It is not allowed to silently skip pa
 same bits.
 
 ```bash
-TT_VISIBLE_DEVICES=$CARD python3 -m pytest tests/test_yourmodel_weights.py -q
-python3 scripts/port_gate.py determinism \
-    --run 'TT_VISIBLE_DEVICES=$CARD python3 scripts/yourmodel_port/forward.py --len 64 --out /tmp/fw.npy' \
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_weights.py -q
+./env/bin/python3 scripts/port_gate.py determinism \
+    --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/forward.py --len 64 --out /tmp/fw.npy' \
     --artifact /tmp/fw.npy
 ```
 
@@ -199,9 +220,9 @@ and reappears at the end as an unattributable end-to-end failure.
 metric on real inputs, and the parity document written.
 
 ```bash
-TT_VISIBLE_DEVICES=$CARD python3 -m pytest tests/test_yourmodel_parity.py -q
-TT_VISIBLE_DEVICES=$CARD python3 scripts/yourmodel_port/task_metric.py --set notes/eval_set.txt
-python3 scripts/port_gate.py report docs/yourmodel-parity.md \
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_parity.py -q
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/task_metric.py --set notes/eval_set.txt
+./env/bin/python3 scripts/port_gate.py report docs/yourmodel-parity.md \
     --require-heading "Component parity" --require-heading "Negative controls"
 ```
 
@@ -221,7 +242,7 @@ tuned at one size silently stops firing at another.
 fired, not an inference from the timing.
 
 ```bash
-TT_VISIBLE_DEVICES=$CARD python3 -m pytest tests/test_yourmodel_ladder.py -q
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_ladder.py -q
 ```
 
 The ladder is parameterized over the sizes your plan promised, read from one list that the test and
@@ -251,9 +272,9 @@ landed lever with its predicted and actual effect, every killed lever with the n
 and a command that reproduces each figure.
 
 ```bash
-python3 scripts/port_gate.py report docs/yourmodel-perf.md \
+./env/bin/python3 scripts/port_gate.py report docs/yourmodel-perf.md \
     --require-heading "Measured roofs" --require-heading "Op census" --require-heading "Levers"
-TT_VISIBLE_DEVICES=$CARD python3 -m pytest tests/test_yourmodel_parity.py -q
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_parity.py -q
 ```
 
 Parity is re-run here on purpose. A performance lever that moves the answer is not a performance
@@ -271,9 +292,9 @@ extended with an arm for every bug that escaped during the port.
 They differ, and the difference is what your users hit.
 
 ```bash
-python3 scripts/packaging_smoke.py
-TT_VISIBLE_DEVICES=$CARD python3 scripts/release_gate.py
-python3 -m pytest tests/test_perf_model_coverage.py tests/test_repo_root_clean.py -q
+./env/bin/python3 scripts/packaging_smoke.py
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/release_gate.py
+./env/bin/python3 -m pytest tests/test_perf_model_coverage.py tests/test_repo_root_clean.py -q
 ```
 
 `packaging_smoke.py`, `release_gate.py` and that coverage test come with tt-bio; you are extending
@@ -292,8 +313,8 @@ live comparison.
 **Exit gate**, run on every change and on every upstream rebase:
 
 ```bash
-TT_VISIBLE_DEVICES=$CARD python3 scripts/release_gate.py
-TT_VISIBLE_DEVICES=$CARD python3 scripts/perf_regression.py
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/release_gate.py
+TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/perf_regression.py
 ```
 
 ## Router: symptom to document
@@ -314,7 +335,7 @@ TT_VISIBLE_DEVICES=$CARD python3 scripts/perf_regression.py
 | Test suite and release gate design | `references/12-testing-and-gates.md` |
 | A specific symptom, indexed by how it looks | `references/13-failure-atlas.md` |
 | Running this as a months-long agentic campaign | `references/14-running-a-long-campaign.md` |
-| One small model taken through every phase, filled in | `examples/worked-example.md` in the repository |
+| One small model taken from Phase 0 to Phase 6, filled in | `examples/worked-example.md` |
 
 When something breaks, go to `13-failure-atlas.md` first. It is indexed by symptom in the words you
 would use, and most of what will happen to you is already in it.

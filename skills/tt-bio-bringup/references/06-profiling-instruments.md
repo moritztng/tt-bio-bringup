@@ -155,7 +155,7 @@ delivered throughput 110→81 TFLOP/s. "Utilization is low, so there is headroom
 The residual from §5 is host time, and it is usually Python. Sample it directly:
 
 ```sh
-py-spy record -o /tmp/host.svg --subprocesses -- ./env/bin/python3 -m tt_bio.cli predict ...
+py-spy record -o /tmp/host.svg --subprocesses -- ./env/bin/tt-bio predict ...
 # or, for a single region you can wrap:  cProfile.Profile() around the warm step only
 ```
 
@@ -218,7 +218,8 @@ write them. Everything else in this section you point at your own model.
 
 ```sh
 # 0. Roofs, once per card. Numbers below are Blackhole p150a, measured, for calibration only.
-./env/bin/python3 scripts/profiling/roofline_bh.py --iters 20 --warmup 5
+./env/bin/python3 scripts/profiling/roofline_bh.py --iters 20 --warmup 5 \
+    --mm_sizes 4096 8192 12288      # the defaults stop at 4096 and understate the compute roof
 #    PEAK_DRAM_BW_GBs 435.2   PEAK_BF16_TFLOPs 161.14 (LoFi) / 100.55 (HiFi4)
 #    machine balance  231 FLOP/byte at HiFi4  -> below that, an op cannot be compute-bound
 

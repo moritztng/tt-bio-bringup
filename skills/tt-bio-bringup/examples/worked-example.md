@@ -1,6 +1,6 @@
 # A worked example: MiniFold, Phase 0 to Phase 6
 
-One small model taken through every phase, with the artifact each gate reads and the output each
+One small model taken from Phase 0 to Phase 6, with the artifact each gate reads and the output each
 gate prints. It exists because the reference documents describe the method and a filled-in example
 shows it, and the second is what tells you whether you have understood the first.
 
@@ -13,52 +13,75 @@ are labelled where they appear. Do not quote a number from this file as a measur
 
 ## The model
 
-MiniFold: an embedding, four pre-norm transformer blocks, a per-token linear head. 814,480
-parameters. No recycling, no diffusion, no MSA. It is the easiest possible shape on purpose, so
-nothing distracts from the workflow, and one detail is not a simplification: `blocks[i]` is called
-as `block(x, mask=mask)`, with a keyword, which is what most real bio models do and what breaks a
-capture that walks only `*args`.
+MiniFold: an embedding, four pre-norm transformer blocks, a pair head. 814,480 parameters, 53
+state-dict keys, measured not asserted. No recycling, no diffusion, no MSA. It is close to the
+easiest possible shape, and the two details that are not simplifications are the two that matter.
 
 ```python
+class PairHead(nn.Module):
+    def __init__(self, d, bins):
+        self.proj, self.out = nn.Linear(d, d), nn.Linear(d, bins)
+
+    def forward(self, x):
+        h = self.proj(x)                            # [B, L, d]
+        pair = h.unsqueeze(2) + h.unsqueeze(1)      # [B, L, L, d]  <- the L-squared allocation
+        return self.out(pair)                       # [B, L, L, bins]
+
 class MiniFold(nn.Module):
     def __init__(self, d=128, layers=4, heads=4, vocab=22, bins=16):
         self.embed = nn.Embedding(vocab, d)
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
-        self.head = nn.Linear(d, bins)
+        self.head = PairHead(d, bins)
 
     def forward(self, tokens, mask=None):
         x = self.embed(tokens)
         for block in self.blocks:
-            x = block(x, mask=mask)
+            x = block(x, mask=mask)                 # keyword, on purpose
         return {"logits": self.head(x), "single": x}
 ```
 
-Your model is larger and has a recycling loop or a diffusion sampler. That changes how long each
-phase takes. It does not change the order of the phases or the shape of any gate.
+**`blocks[i]` is called with `mask=` as a keyword.** That is the dominant convention in real bio
+models and it is what breaks a capture that walks only `*args`.
+
+**The pair head materialises `[B, L, L, d]`.** One allocation that scales as L squared, comfortable
+at the length you develop at and the thing that decides your maximum size. Every real bio model has
+one, and in this example it turns out to be the whole performance story too.
+
+This is the file at `examples/minifold_capture.py`; every number in the table below came from running
+it, not from writing it down. Your model is larger and has a recycling loop or a diffusion sampler.
+That changes how long each phase takes. It does not change the order of the phases or any gate.
 
 ---
 
 ## Phase 0: the plan, and a gate you cannot argue with
 
 ```bash
+# $SKILL is the skill directory: an install, or your clone. See 01-orientation.md, "Your first hour".
+SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+        -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
+test -f "$SKILL/SKILL.md" || SKILL=/path/to/your/clone/skills/tt-bio-bringup
+
 mkdir -p notes scripts
 cp "$SKILL/templates/PORT_PLAN.md" notes/
 cp "$SKILL/gates/port_gate.py" scripts/
-python3 scripts/port_gate.py plan notes/PORT_PLAN.md
+./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md
 ```
 
 The template starts red, and it names every hole:
 
 ```
-GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 11 problem(s):
+GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 12 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
-  notes/PORT_PLAN.md:30: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
-  notes/PORT_PLAN.md:41: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
-  notes/PORT_PLAN.md:45: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
-  notes/PORT_PLAN.md:61: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
-  notes/PORT_PLAN.md:72: empty cell(s) under 'Decision'
-  ...
-  notes/PORT_PLAN.md: the Target section states no numbers. The supported size range is a range of integers, not an adjective.
+  notes/PORT_PLAN.md:34: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
+  notes/PORT_PLAN.md:45: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
+  notes/PORT_PLAN.md:49: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
+  notes/PORT_PLAN.md:65: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
+  notes/PORT_PLAN.md:76: empty cell(s) under 'Decision'
+  ... four more Evaluation-set rows ...
+  notes/PORT_PLAN.md:32: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
+    at least 3: the leaves, the blocks they compose into, and the whole model.
+  notes/PORT_PLAN.md: the supported size range reads 'Supported size range to ship (state numbers,
+    not "large"):'. That is one number or none. State both ends.
 ```
 
 Four sections carry the weight. The rest is bookkeeping.
@@ -75,7 +98,9 @@ whole model, which does not work.
 | `blocks.0.ffn` | 131,712 | `[1, L, 128]` | `[1, L, 128]` | `block0_ffn.pt` | PCC >= 0.9995 | not started |
 | `blocks.0` (whole) | 198,272 | `[1, L, 128]` + mask | `[1, L, 128]` | `block0.pt` | PCC >= 0.999 | not started |
 | `blocks` (4 blocks) | 793,088 | `[1, L, 128]` + mask | `[1, L, 128]` | `trunk.pt` | PCC >= 0.998 | not started |
-| `head` | 18,576 | `[1, L, 128]` | `[1, L, L, 16]` | `head.pt` | PCC >= 0.998 | not started |
+| `head.proj` | 16,512 | `[1, L, 128]` | `[1, L, 128]` | `head_proj.pt` | PCC >= 0.9995 | not started |
+| `head.out` | 2,064 | `[1, L, L, 128]` | `[1, L, L, 16]` | `head_out.pt` | PCC >= 0.998 | not started |
+| `head` (whole) | 18,576 | `[1, L, 128]` | `[1, L, L, 16]` | `head.pt` | PCC >= 0.998 | not started |
 | `MiniFold` (whole) | 814,480 | `[1, L]` + mask | dict of 2 | `e2e.pt` | PCC >= 0.998 both | not started |
 
 Those thresholds are a first guess from `03-precision-and-numerics.md`'s plausibility bands. Phase 1
@@ -97,10 +122,16 @@ writing that down stops someone padding it twice.
 **The risk register: the ops with no clean equivalent.** Two entries, and the first one is the whole
 performance story of this model.
 
-1. The head's outer sum materialises `[1, L, L, 128]` before projecting to 16 bins. At L=512 that is
-   32 M elements, 64 MB in bf16, and it is the only allocation that scales as L squared. Plan:
-   project to bins first where the algebra allows, otherwise chunk over the first L axis.
-2. `torch.use_deterministic_algorithms(True)` has no device-side equivalent. Reproducibility on
+1. The head's outer sum materialises `[1, L, L, 128]` before projecting to 16 bins. At L=117 that is
+   1,752,192 elements, 3.5 MB in bf16; at L=512 it is 33,554,432 elements and 67.1 MB. Measured by
+   arithmetic on the shapes, and it is the only allocation that scales as L squared. Plan: project to
+   bins first where the algebra allows, otherwise chunk over the first L axis.
+2. **`F.gelu` has two definitions.** The reference uses the exact erf form; ttnn's default is the
+   tanh approximation. They differ by about 1e-3 relative, everywhere, which is small, uniform and
+   grows smoothly with depth: indistinguishable from accumulated bf16 error, and the tempting response
+   is to widen the threshold. Check the approximation flag on both sides before believing any
+   whole-model precision story.
+3. `torch.use_deterministic_algorithms(True)` has no device-side equivalent. Reproducibility on
    device is asserted by running twice and comparing bits, not by setting a flag.
 
 **The evaluation set, named now.** Phase 3's gate needs one task-level metric on real inputs, and
@@ -118,11 +149,19 @@ filled, no placeholders, nothing deferred.
 Then, before trusting it, make it fail. Blank one golden cell and confirm the gate notices:
 
 ```bash
-python3 scripts/port_gate.py prove-red \
-  --check   'python3 scripts/port_gate.py plan notes/PORT_PLAN.md' \
-  --break   "sed -i '0,/| \`embed\`/s/| \`embed.pt\` |/|  |/' notes/PORT_PLAN.md" \
-  --restore 'git checkout notes/PORT_PLAN.md'
+cp notes/PORT_PLAN.md /tmp/plan.bak
+./env/bin/python3 scripts/port_gate.py prove-red \
+  --check         './env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md' \
+  --break         "sed -i 's/\`embed.pt\`/ /' notes/PORT_PLAN.md" \
+  --restore       'cp /tmp/plan.bak notes/PORT_PLAN.md' \
+  --expect-change notes/PORT_PLAN.md
 ```
+
+`--restore` is a copy from a backup, not `git checkout`: the plan was created by `cp` two steps ago
+and is not committed yet, so `git checkout` would fail and leave the injected hole in place.
+`--expect-change` is what makes the verdict trustworthy. A `sed -i` whose pattern does not match exits
+0 having changed nothing, and without that flag the run reports "your gate is decoration" about a gate
+that is fine.
 
 ```
 GATE 0: green (0) -> fault injected -> red (1) -> restored -> green (0). This check can fail, so
@@ -140,11 +179,11 @@ that is the point**: it is the fixture that catches an unmasked tile tail, which
 that produced 72x the reference error in a shipped model with no error message and no log line.
 
 ```bash
-python3 examples/minifold_capture.py --len 117 --out scripts/minifold_port/parity_artifacts
+python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts
 ```
 
 ```
-captured 39 modules, 117 entries, 0.005s -> scripts/minifold_port/parity_artifacts
+captured 41 modules, 123 entries, 0.006s -> scripts/minifold_port/parity_artifacts
 blocks.0 kwargs captured: ['mask']
 blocks.0 mask is a tensor: True
 ```
@@ -158,25 +197,27 @@ reference.
 
 ```bash
 python3 scripts/port_gate.py determinism \
-  --run 'python3 examples/minifold_capture.py --len 117 --out scripts/minifold_port/parity_artifacts' \
+  --run 'python3 "$SKILL/examples/minifold_capture.py" --len 117 --out scripts/minifold_port/parity_artifacts' \
   --artifact scripts/minifold_port/parity_artifacts/minifold_117.pt
 ```
 
 ```
---- run 1: python3 examples/minifold_capture.py --len 117 --out .../parity_artifacts
---- run 2: python3 examples/minifold_capture.py --len 117 --out .../parity_artifacts
-  same     .../minifold_117.pt  c8b4c6547abf7915  c8b4c6547abf7915
+--- run 1: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out .../parity_artifacts
+--- run 2: python3 "$SKILL/examples/minifold_capture.py" --len 117 --out .../parity_artifacts
+  same     .../minifold_117.pt  53fe30714e9ae0f3  53fe30714e9ae0f3
 GATE 0: 1 artifact(s) byte-identical across two runs.
 ```
 
 The gate deletes the artifact before each run, so a capture that exits 0 without writing anything
-fails instead of passing on yesterday's file.
+fails instead of passing on yesterday's file. The digest itself is not a constant: it depends on your
+torch build, so yours will differ from the one above and that is fine. What the gate asserts is that
+two runs on one machine agree.
 
 **And the negative control, which is not optional.** `--unpinned` skips the seeding and `eval()`,
 which is what a rushed capture actually forgets:
 
 ```
-  DIFFERS  .../minifold_117.pt  2a5b606500b6e582  5e39bdcb5a0674ab
+  DIFFERS  .../minifold_117.pt  d79bf518cb06ac83  f22e07595d839d6e
 GATE 1: 1 artifact(s) changed between two identical runs. Pin the seeds, the thread count and the
 iteration order before going on: a golden you cannot reproduce cannot prove anything later.
 ```
@@ -257,7 +298,8 @@ one sequence is one input rather than a sweep.
 **The GELU failure looked like precision.** A uniform, small, whole-model deviation that grows
 smoothly with depth is exactly what an accumulated bf16 error looks like, and the tempting response
 is to widen the threshold until the trunk passes. The plan's risk register named it in Phase 0
-(risk 2), which is the only reason it was checked in ten minutes instead of chased for two days.
+(risk 2 in the op inventory), which is the only reason it was checked in ten minutes instead of
+chased for two days.
 **A deviation you accept at a leaf compounds coherently and reappears at the end as an
 unattributable end-to-end failure.**
 
@@ -302,7 +344,7 @@ Census first, roofs second, prediction third, build fourth. *Every number illust
 |---|---|---|---|---|
 | `ttnn.linear` | 22 | 4.1 ms | 38% | compute, 1.4x off the measured roof |
 | broadcast add in the head | 1 | 3.3 ms | 31% | DRAM bandwidth, 1.1x off |
-| `ttnn.transformer.sdpa` | 4 | 1.8 ms | 17% | compute, 2.2x off |
+| `ttnn.transformer.scaled_dot_product_attention` | 4 | 1.8 ms | 17% | compute, 2.2x off |
 | everything else | 61 | 1.5 ms | 14% | mixed |
 
 Wall clock 31.4 ms, summed device time 10.7 ms, **residual 20.7 ms, 66% of the wall**. That residual
@@ -314,7 +356,7 @@ list optimizes `ttnn.linear` and captures at most 38% of a third of the time.
 |---|---|---|---|---|
 | trace capture, whole forward | 66% (the residual) | 2.4x | 2.1x | landed |
 | project to bins before the outer sum | 31% (the broadcast add) | 1.35x | 1.28x | landed |
-| fused attention kernel | 17% (sdpa) | 1.09x | not built | killed: 9%, below the effort bar |
+| fused attention kernel | 17% (SDPA) | 1.09x | not built | killed: 9% end-to-end, under the 10% custom-kernel bar |
 
 The prediction is written before the build, so a miss is informative. The killed lever stays in the
 table with the number that killed it, so it cannot come back in six weeks as a fresh proposal on a
@@ -358,6 +400,10 @@ Honest list, because the gap between this and your port is mostly here.
 - **Multi-card anything.** One card throughout.
 - **A real accuracy investigation.** The two failures above were found in minutes because the plan
   predicted them. The ones that cost days are in `13-failure-atlas.md`, indexed by symptom.
-- **Custom kernels.** The census killed that lever at 9%, which is the normal outcome.
+- **Custom kernels.** The census killed that lever at 9%, which is the normal outcome. Note the bar
+  there is `10-custom-kernels.md`'s 10%, higher than the campaign-wide effort bar, because it is the
+  most expensive lever per unit of effort in the workflow.
+- **Phase 7.** It has no first-time artifact: it is the gate re-run on every change and every upstream
+  rebase, plus a new permanent arm for each bug found from then on. Nothing to show once.
 
 The order, though, is the same at any size, and so is every gate.

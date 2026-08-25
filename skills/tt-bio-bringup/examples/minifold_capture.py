@@ -5,10 +5,10 @@ This is the capture protocol from `references/02-parity-and-correctness.md` §1.
 toy reference model, so you can watch the Phase 1 gate go green and red before you have any
 device code. It needs torch and nothing else. No Tenstorrent card, no ttnn.
 
-    python3 examples/minifold_capture.py --len 117 --out /tmp/artifacts
+    python3 "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts
 
-    python3 skills/tt-bio-bringup/gates/port_gate.py determinism \
-        --run 'python3 examples/minifold_capture.py --len 117 --out /tmp/artifacts' \
+    python3 "$SKILL/gates/port_gate.py" determinism \
+        --run 'python3 "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts' \
         --artifact /tmp/artifacts/minifold_117.pt
 
 Then break it, and watch the gate catch it: pass --unpinned to skip the seeding, and the two
@@ -37,7 +37,6 @@ import random
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 
@@ -63,14 +62,33 @@ class Block(nn.Module):
         return x + self.ffn(self.norm2(x))
 
 
+class PairHead(nn.Module):
+    """Projects to a pair representation by an outer sum, then to distance bins.
+
+    This is the only part of MiniFold that scales as L squared, and it is here because that
+    is the shape of the interesting problem in a real bio model: one allocation that is fine
+    at the length you develop at and the thing that OOMs at the length you promised.
+    """
+
+    def __init__(self, d: int, bins: int):
+        super().__init__()
+        self.proj = nn.Linear(d, d)
+        self.out = nn.Linear(d, bins)
+
+    def forward(self, x):
+        h = self.proj(x)                                  # [B, L, d]
+        pair = h.unsqueeze(2) + h.unsqueeze(1)            # [B, L, L, d]  <- the L-squared one
+        return self.out(pair)                             # [B, L, L, bins]
+
+
 class MiniFold(nn.Module):
-    """Embedding, four blocks, a per-token head. Outputs a dict, like most real ones."""
+    """Embedding, four blocks, a pair head. Outputs a dict, like most real ones."""
 
     def __init__(self, d: int = 128, layers: int = 4, heads: int = 4, vocab: int = 22, bins: int = 16):
         super().__init__()
         self.embed = nn.Embedding(vocab, d)
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
-        self.head = nn.Linear(d, bins)
+        self.head = PairHead(d, bins)
 
     def forward(self, tokens, mask=None):
         x = self.embed(tokens)
@@ -103,7 +121,6 @@ def capture(ref: nn.Module, seed: int, *, pin: bool = True, **real_input) -> dic
     """
     if pin:
         torch.manual_seed(seed)
-        np.random.seed(seed)
         random.seed(seed)
         torch.use_deterministic_algorithms(True)
         ref.eval()                    # without this, dropout is live and the golden is a sample
@@ -166,7 +183,7 @@ def main() -> None:
         "reference_commit": "0000000",
         "settings": {"length": args.len, "dtype": "fp32", "device": "cpu"},
         "seeds": [args.seed],
-        "command": f"python3 examples/minifold_capture.py --len {args.len} --seed {args.seed}",
+        "command": f"python3 minifold_capture.py --len {args.len} --seed {args.seed}",
         "provenance": "CPU torch reference, fp32, deterministic algorithms on",
         "runtime_s": round(runtime_s, 3),
         "invalidation_rule": "regenerate if reference_commit, length or settings change",

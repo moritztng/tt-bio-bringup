@@ -16,6 +16,10 @@ python3 scripts/port_gate.py plan PORT_PLAN.md
 
 ## Target
 
+Fill the hardware lines from `tt-smi -ls` once you have a card. Before then, state your intent and
+append "unconfirmed"; the gate wants a stated answer, not a confirmed one, and an unconfirmed value
+you can see is better than a blank you cannot.
+
 - Chip generation and card count:
 - Supported size range to ship (state numbers, not "large"):
 - Input modes to support:

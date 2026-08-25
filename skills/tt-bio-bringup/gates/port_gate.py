@@ -2,12 +2,13 @@
 """Machine-checkable exit gates for a tt-bio bring-up.
 
 Copy this file into your fork as ``scripts/port_gate.py``. Every phase gate in the
-tt-bio-bringup skill is a shell command, and four of them are this script:
+tt-bio-bringup skill is a shell command, and five of them call this script:
 
     python3 scripts/port_gate.py plan PORT_PLAN.md
     python3 scripts/port_gate.py report docs/yourmodel-perf.md --require-heading "Op census"
     python3 scripts/port_gate.py determinism --run "<capture cmd>" --artifact <path>
-    python3 scripts/port_gate.py prove-red --check "<cmd>" --break "<cmd>" --restore "<cmd>"
+    python3 scripts/port_gate.py prove-red --check "<cmd>" --break "<cmd>" --restore "<cmd>" \\
+        --expect-change <the file the break edits>
 
 Exit 0 the gate passed, 1 the gate failed and names why, 2 it could not run (missing
 file, bad arguments) and measured nothing. Keep 1 and 2 distinct: a bad tree and a bad
@@ -30,9 +31,33 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.stdout.reconfigure(line_buffering=True)   # keep our labels interleaved with children's output
+
 PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.\-]*>", re.I)
-DEFERRED = re.compile(r"\b(TBD|TODO|FIXME|XXX|figure (this )?out( later)?|"
-                      r"decide later|to be decided|coming soon)\b", re.I)
+#: Prose words inside angle brackets mean it is a sentence, not an unfilled template slot.
+NOT_A_PLACEHOLDER = re.compile(r"\b(and|or|not|if|then|is|in|to|of|the)\b", re.I)
+DEFERRED = re.compile(
+    r"\b(TBD|TODO|FIXME|XXX"
+    r"|figure (this |it )?out( later)?|decide later|to be decided|coming soon"
+    r"|we will (decide|pick|choose|look|figure|work|measure|find)"
+    r"|(will|to) be (decided|determined|measured|chosen|picked)"
+    r"|pick one (in|during|at) |whatever .{0,30}turns out"
+    r"|look(s)? right|seems right|good enough|later|unknown|unclear|not sure|no idea"
+    r")\b", re.I)
+#: A cell that says nothing. "lots", "some", "a few": not a value.
+VAGUE_CELL = re.compile(
+    r"^(lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
+    r"|maybe|probably|roughly|approx|\?+|-+|\.+|etc\.?|see above|as needed|standard|default)$", re.I)
+#: A named golden is a file or a path, not a promise. Accept an explicit exactness note too.
+GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
+                       r"|[\w-]+/[\w./-]+"
+                       r"|\bnone needed\b", re.I)
+#: Columns whose whole purpose is to record that something failed on purpose.
+MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
+AFFIRMATIVE = re.compile(r"\s*(yes|y|red|true|✓|✔|pass(ed)?|confirmed|went red)\b.*", re.I)
+#: A threshold is a number, or a named exactness criterion.
+THRESHOLD_OK = re.compile(r"[0-9]"
+                          r"|\bbit[- ]exact\b|\bmaxdiff\b|\bexact\b|\bidentical\b", re.I)
 
 
 # --------------------------------------------------------------------------- report
@@ -84,11 +109,21 @@ def strip_code_blocks(text: str) -> str:
     return "\n".join(out)
 
 
+def strip_inline_code(line: str) -> str:
+    """Blank out `code spans`, so a documented filename convention is not read as a hole."""
+    return re.sub(r"`[^`]*`", "``", line)
+
+
 def check_document(path: Path, required_headings: list[str], require_tables: bool) -> list[str]:
     """Generic filled-in-template check. Returns a list of problems."""
     text = path.read_text(encoding="utf-8", errors="replace")
     prose = strip_code_blocks(text)
     problems: list[str] = []
+
+    if not text.strip():
+        return [f"{path} is empty."]
+    if not any(l.startswith("#") for l in prose.splitlines()):
+        problems.append(f"{path} has no headings, so it is not the document this gate checks.")
 
     headings = {h.strip("# ").strip().lower() for h in prose.splitlines() if h.startswith("#")}
     for want in required_headings:
@@ -96,9 +131,12 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
             problems.append(f"missing a heading containing {want!r}")
 
     for n, line in enumerate(prose.splitlines(), 1):
-        for m in PLACEHOLDER.finditer(line):
+        bare = strip_inline_code(line)
+        for m in PLACEHOLDER.finditer(bare):
+            if NOT_A_PLACEHOLDER.search(m.group(0)):
+                continue                       # prose in angle brackets, not a template slot
             problems.append(f"{path}:{n}: unfilled placeholder {m.group(0)!r}")
-        m = DEFERRED.search(line)
+        m = DEFERRED.search(bare)
         if m:
             problems.append(f"{path}:{n}: deferred entry {m.group(0)!r}, so this is not finished")
 
@@ -110,10 +148,24 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
             problems.append(f"{path}:{t.line_no}: table [{' | '.join(t.header)}] has no data rows")
             continue
         for n, row in t.rows:
+            if len(row) < len(t.header):
+                missing = t.header[len(row):]
+                problems.append(f"{path}:{n}: row stops after {len(row)} of {len(t.header)} "
+                                f"columns, so {', '.join(missing)!r} is absent rather than empty")
             blank = [t.header[i] if i < len(t.header) else f"col{i + 1}"
                      for i, c in enumerate(row) if not c]
             if blank:
                 problems.append(f"{path}:{n}: empty cell(s) under {', '.join(blank)!r}")
+            for i, cell in enumerate(row):
+                col = t.header[i] if i < len(t.header) else f"col{i + 1}"
+                v = cell.strip(" *`")
+                if v and VAGUE_CELL.fullmatch(v):
+                    problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
+                # A "did it go red?" column answered "no" is the finding, not a filled cell.
+                if v and MUST_BE_YES.search(col) and not AFFIRMATIVE.fullmatch(v):
+                    problems.append(
+                        f"{path}:{n}: {col!r} says {v!r}. A negative control that did not go red is "
+                        "not a control: the test it guards has not been shown able to fail.")
     return problems
 
 
@@ -137,6 +189,9 @@ def _section(text: str, name: str) -> str | None:
 PLAN_HEADINGS = ["Reference", "Target", "Module tree", "Axes", "Op inventory", "Control flow",
                  "Host-side pipelines", "Randomness", "Evaluation set", "Risks"]
 
+#: A leaf-first module tree has leaves, the blocks they compose into, and the whole model.
+MIN_TREE_ROWS = 3
+
 
 def gate_plan(args) -> int:
     path = Path(args.path)
@@ -156,18 +211,46 @@ def gate_plan(args) -> int:
         problems.append(f"{path}: no module-tree table with both a Module and a Golden column. "
                         "Every module needs the golden that will prove it, named, in Phase 0.")
     else:
-        for want in ("golden", "threshold"):
-            if not any(want in h.lower() for h in tree.header):
+        cols = {}
+        for want in ("module", "golden", "threshold"):
+            idx = next((i for i, h in enumerate(tree.header) if want in h.lower()), None)
+            if idx is None:
                 problems.append(f"{path}:{tree.line_no}: module tree has no {want} column")
-        if not tree.rows:
-            problems.append(f"{path}:{tree.line_no}: module tree is empty")
+            cols[want] = idx
+
+        if len(tree.rows) < MIN_TREE_ROWS:
+            problems.append(
+                f"{path}:{tree.line_no}: module tree has {len(tree.rows)} row(s). "
+                f"Phase 0 is a leaf-first decomposition, so it needs at least {MIN_TREE_ROWS}: "
+                "the leaves, the blocks they compose into, and the whole model. One row naming "
+                "the whole model is the thing this phase exists to replace.")
+
+        for n, row in tree.rows:
+            def cell(key):
+                i = cols.get(key)
+                return row[i].strip(" *`") if i is not None and i < len(row) else ""
+            mod, golden, thresh = cell("module"), cell("golden"), cell("threshold")
+            if golden and not GOLDEN_OK.search(golden):
+                problems.append(
+                    f"{path}:{n}: module {mod!r} names its golden as {golden!r}, which is not a "
+                    "fixture. Name the file the test will load, or say 'none needed' and why.")
+            if thresh and not THRESHOLD_OK.search(thresh):
+                problems.append(
+                    f"{path}:{n}: module {mod!r} has threshold {thresh!r}, which has no number in "
+                    "it. A threshold is a number, or a named exactness criterion like 'maxdiff 0'.")
 
     target = _section(text, "target")
     if target is None:
         pass                              # already reported as a missing heading
-    elif not re.search(r"\d", target):
-        problems.append(f"{path}: the Target section states no numbers. The supported size "
-                        "range is a range of integers, not an adjective.")
+    else:
+        size = next((l for l in target.splitlines() if "size range" in l.lower()), None)
+        if size is None:
+            problems.append(f"{path}: the Target section has no 'size range' line.")
+        elif len(re.findall(r"\d+", size)) < 2:
+            problems.append(
+                f"{path}: the supported size range reads {size.strip(' -*')!r}. That is one number "
+                "or none. State both ends, because Phase 4 runs a ladder across exactly this range "
+                "and Phase 2 has to prove the top of it fits.")
 
     return _verdict("phase 0 plan", path, problems)
 
@@ -211,9 +294,13 @@ def _sha(path: Path) -> str:
 def gate_determinism(args) -> int:
     artifacts = [Path(a) for a in args.artifact]
     runs: list[dict[Path, str]] = []
+    for a in artifacts:
+        if a.is_dir():
+            print(f"GATE 2: {a} is a directory. --artifact takes the file whose bytes must match.")
+            return 2
     for attempt in (1, 2):
         for a in artifacts:
-            if a.exists():
+            if a.is_file():
                 a.unlink()
         print(f"--- run {attempt}: {args.run}")
         rc = _sh(args.run)
@@ -244,7 +331,12 @@ def gate_determinism(args) -> int:
 # ------------------------------------------------------------------------ prove-red
 
 
+def _fingerprint(paths):
+    return {q: (_sha(Path(q)) if Path(q).is_file() else None) for q in paths}
+
+
 def gate_prove_red(args) -> int:
+    watched = args.expect_change or []
     print(f"--- check, as it stands: {args.check}")
     before = _sh(args.check)
     if before != 0:
@@ -252,10 +344,23 @@ def gate_prove_red(args) -> int:
               "Fix the check or the code first; there is nothing to prove yet.")
         return 2
 
+    was = _fingerprint(watched)
     print(f"--- break it: {getattr(args, 'break')}")
     if _sh(getattr(args, "break")) != 0:
         print("GATE 2: the break command itself failed, so the fault was never injected.")
         return 2
+
+    # An exit code is not an edit. `sed -i s/pattern/x/` exits 0 when the pattern does not
+    # match, and a stale break command is the usual reason this check reads backwards: nothing
+    # was injected, the gate stayed green, and the gate got blamed for it.
+    if watched:
+        now = _fingerprint(watched)
+        unchanged = [q for q in watched if was[q] == now[q]]
+        if unchanged:
+            print(f"GATE 2: the break command exited 0 but did not change "
+                  f"{', '.join(unchanged)}. Nothing was injected, so this run says nothing about "
+                  "the check. Usually the pattern no longer matches the file.")
+            return 2
     print(f"--- check, with the fault injected: {args.check}")
     broken = _sh(args.check)
 
@@ -269,10 +374,14 @@ def gate_prove_red(args) -> int:
               "Your tree may still hold the injected fault. Fix that before reading the result.")
         return 2
     if broken == 0:
-        print("GATE 1: the check stayed green with the fault injected. It is not a gate, it is "
-              "decoration. Find out what it actually asserts: existence instead of content, a "
-              "committed verdict re-read instead of recomputed, the installed package instead of "
-              "your checkout, or an inverted exit status.")
+        print("GATE 1: the check stayed green with the fault injected.")
+        if not watched:
+            print("  First confirm the break actually edited something. A `sed -i` whose pattern no\n"
+                  "  longer matches exits 0 having changed nothing, and that reads identically to\n"
+                  "  this. Re-run with --expect-change <the file you meant to edit>.")
+        print("  If the injection was real, the check is decoration. Find out what it asserts:\n"
+              "  existence instead of content, a committed verdict re-read instead of recomputed,\n"
+              "  the installed package instead of your checkout, or an inverted exit status.")
         return 1
     print(f"GATE 0: green (0) -> fault injected -> red ({broken}) -> restored -> green (0). "
           "This check can fail, so its green means something.")
@@ -305,6 +414,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--check", required=True, metavar="CMD")
     p.add_argument("--break", required=True, metavar="CMD", dest="break")
     p.add_argument("--restore", required=True, metavar="CMD")
+    p.add_argument("--expect-change", action="append", metavar="PATH",
+                   help="a file the break must actually modify; refuses with exit 2 if it did not. "
+                        "Use it whenever the break is a sed or a patch.")
     p.set_defaults(fn=gate_prove_red)
 
     args = ap.parse_args(argv)
