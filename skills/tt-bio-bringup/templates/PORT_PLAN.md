@@ -22,8 +22,10 @@ you can see is better than a blank you cannot.
 
 The gate accepts exactly these as "not known yet", and rejects a blank: `unconfirmed`, `none yet`,
 `not yet`, `none needed`, `no fix needed`, `n/a, <the reason>`.
-It rejects the deferral phrasings and a bare dash, because those record that you stopped rather than
-what you decided. `port_gate.py` names the one it found when it fires.
+Everything else that records you stopped rather than what you decided is rejected, including a bare
+dash. `SKILL.md`, "Phase 0", lists the rejected set; `port_gate.py` names the one it found when it
+fires. This template does not spell them out because the gate reads this file, and writing the
+tokens here would fail it.
 
 - Chip generation and card count:
 - Supported size range to ship (state numbers, not "large"):
@@ -92,6 +94,13 @@ or Phase 3 stalls three weeks in.
 Phase 3's gate reads this set from `notes/eval_set.txt`: one input per line, blank lines and
 `#` comments ignored, each line whatever your model takes (a path, a sequence, an accession). Keep
 the ground truth beside it under `notes/eval/` and name the file here.
+
+**If your targets have no experimental ground truth**, which is normal for a proprietary pipeline,
+the metric is agreement with your own CPU reference on a held-out set, not accuracy: same inputs,
+reference output as the target, and a domain-meaningful distance rather than PCC. That is a weaker
+claim and it is the right one to make, so write which of the two you are doing. A metric that
+silently changes meaning between "matches the reference" and "matches reality" is the one that gets
+quoted at a customer.
 
 ## Risks, ranked
 

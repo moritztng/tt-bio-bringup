@@ -69,7 +69,15 @@ Nothing below is Tenstorrent-specific expertise. It is the install.
 model and capturing a CPU golden need torch, plus an importable `ttnn` for the plan's op-inventory
 column, and they are usually a week of work. Neither needs a card: `import ttnn` works with no device
 present as long as `TT_VISIBLE_DEVICES` is pinned empty, which is what
-`15-torch-to-ttnn-op-map.md` §1 does. Step 2 below is the only part of day zero Phase 0 waits on. If
+`15-torch-to-ttnn-op-map.md` §1 does.
+
+To be precise about what waits on what, because two things are true at once: **the Phase 0 gate
+never waits**, since `port_gate.py` is standard library only and runs under any `python3`. **One
+Phase 0 column prefers step 2**, the op inventory, because resolving a ttnn name is better than
+guessing it. If you cannot build `env` yet, fill that column from
+`15-torch-to-ttnn-op-map.md` §2's table, mark the rows you could not resolve, and re-resolve them in
+Phase 2 when the environment exists. Write that decision in `notes/PORT_STATE.md`; do not let it
+block the phase. If
 your hardware is still in a box, or the driver is not up yet, start Phase 0 now and do day zero in
 parallel. What you cannot do is enter **Phase 2**, where the first device code runs, before steps 3
 to 5 below pass. Two Phase 0 fields do want the hardware (chip generation and card count): write your

@@ -83,6 +83,18 @@ check() {   # check <label> <expected-rc> <file>
 } > "$TMP/plan.md"
 check "Phase 0 plan, from the example's own tables" 0 "$TMP/plan.md" plan "$TMP/plan.md"
 
+# 1b. The Phase 0 report arm, which the example shows as a markdown block rather than a table.
+#     Extract it and run the same command the example prints.
+awk '/^## Environment$/{on=1} on&&/^```$/{exit} on{print}' "$EX" > "$TMP/state_env.md"
+{ echo "# Port state: minifold"; echo; cat "$TMP/state_env.md"; echo
+  echo "## Decisions taken"; echo
+  echo "| Date | Decision | Why | What would reverse it |"; echo "|---|---|---|---|"
+  echo "| 2026-08-25 | one venv, not two | the reference has no conflicting pins | a pin conflict |"
+} > "$TMP/state.md"
+check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
+      report "$TMP/state.md" --no-tables --require-heading "Environment" \
+      --require-heading "Decisions taken"
+
 # 2. The Phase 3 component-parity table, under the headings the Phase 3 gate requires.
 {
     echo "# Parity report: minifold"

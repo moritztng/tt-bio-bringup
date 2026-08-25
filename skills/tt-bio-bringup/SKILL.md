@@ -198,7 +198,14 @@ first thing a fresh session reads and nothing else in this workflow ever looks a
 those re-derives them differently.
 
 Exit 0 requires every section present, every table row filled, every module carrying a named golden
-and a threshold, a size range with numbers in it, and no placeholder or `TBD` anywhere.
+and a threshold, a size range with numbers in it, and no placeholder or deferral anywhere.
+
+The gate accepts these as "not known yet", because you have to type them and the record then shows
+you decided: `unconfirmed`, `none yet`, `not yet`, `none needed`, `no fix needed`, `n/a, <reason>`.
+It rejects a blank, a bare dash, and the deferral tokens: `TBD`, `TODO`, `FIXME`, `XXX`,
+`coming soon`, `to be decided`/`determined`/`measured`/`chosen`/`picked`, `decide later`,
+`figure it out later`, `good enough for now`, `no idea`. The hard tokens are rejected even inside
+backticks, so a document cannot launder one by quoting it.
 
 ### Phase 1 - Golden capture on CPU
 

@@ -123,6 +123,13 @@ scripts/<model>_port/parity_artifacts/<model>_<len>.meta.json # provenance, see 
 exactly as `named_modules()` spells it and `<root>` for the top-level model. The example's capture at
 `--len 117` writes 41 modules as 123 entries under those keys.
 
+**Not everything is an `nn.Module`.** The capture keys on `named_modules()`, so an outer product, a
+gate split or any other in-forward tensor algebra has no key of its own. Two honest answers, and pick
+one per row rather than leaving it blank: name the **enclosing** module's fixture, which brackets the
+algebra between a captured input and a captured output, or wrap the algebra in a small `nn.Module` so
+it gets a key. The second costs one refactor of your reference and is worth it for anything you
+expect to get wrong, which for a bio model is usually the pair-forming step.
+
 **So a plan's Golden cell names the file and the key**, for example
 `minifold_117.pt : blocks.0.attn/out`. That is loadable:
 
@@ -282,37 +289,59 @@ against the fixture you already captured.
 # Same module, same captured inputs, two torch precisions. No ttnn, no card.
 golden = torch.load(fixture, weights_only=False)
 args   = golden[f"{name}/args"]; kwargs = golden[f"{name}/kwargs"]
-ref32  = golden[f"{name}/out"]                                 # captured in fp32
+ref32  = leaf(golden[f"{name}/out"])           # captured in fp32; leaf() unwraps tuples/dicts
 
-with torch.autocast("cpu", dtype=torch.bfloat16):
-    ref16 = mod(*args, **kwargs)
+with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+    out16 = mod(*args, **kwargs)
+ref16 = leaf(out16)
 
-envelope = pcc(ref16.float(), ref32)     # how far bf16 alone moves this module
-maxdiff  = (ref16.float() - ref32).abs().max().item()
-exact    = torch.equal(ref16.float(), ref32)      # the only honest test for "bf16-exact"
-print(f"{name:24s} pcc={envelope:.10f} maxdiff={maxdiff:.3e} exact={exact}")
+if ref16.dtype != torch.bfloat16:
+    # autocast has a per-op fp32 list: layer_norm, softmax, pow, mean, rsqrt and more stay
+    # fp32. For those modules this instrument measured NOTHING, and reports a perfect score.
+    print(f"{name}: autocast kept this in fp32, so the numbers below are not a bf16 envelope")
+
+ref16 = ref16.float()
+envelope = pcc(ref16, ref32)
+maxdiff  = (ref16 - ref32).abs().max().item()
+exact    = torch.equal(ref16, ref32)
+print(f"{name:24s} dtype={out_dtype} pcc={envelope:.10f} maxdiff={maxdiff:.3e} exact={exact}")
 ```
 
-Print all three. A PCC rounded to six places reads `1.000000` at a maxdiff of 5e-3, which is the
-`02` §3.2 lesson ("a single scalar hides a localized catastrophe") applied to the instrument you are
-using to set every threshold in the port.
+`leaf()` matters: a module can return a tuple or a dict, and `.float()` on either raises. The
+whole-model row does return a dict in most bio models, and it is a row the plan requires.
+
+**Check the dtype before you believe the score.** This is the trap in this recipe and it is silent:
+`torch.autocast` keeps a list of ops in fp32, normalizations among them, so a `LayerNorm` under
+autocast returns fp32, `exact` comes back **True** and `maxdiff` **0.000e+00**. That is not
+bf16-exactness, it is autocast declining to cast. Taking it at face value sets that module's gate to
+maxdiff 0, and a correct device LayerNorm misses that bar by ~1.3e-02, which is the day of Phase 3
+debugging this section exists to prevent.
+
+For a module autocast skipped, either gate it as part of the enclosing block that autocast did cast,
+or measure it explicitly:
+
+```python
+mod16 = copy.deepcopy(mod).to(torch.bfloat16).eval()
+ref16 = leaf(mod16(*to_bf16(args), **to_bf16(kwargs))).float()
+```
+
+That is an **upper bound**, not the device's regime: it rounds the accumulation too, where the
+device accumulates in fp32. Use it as a ceiling and say in the plan that you did.
+
+**A replay needs a tolerance even in fp32.** Running a submodule standalone does not reproduce its
+in-graph result bit for bit, because the surrounding graph changes the summation order. On the
+worked example nine of forty-one modules differ by ~9e-08 in pure fp32, all of them attention. Do
+not write the replay test as `torch.equal`.
+
+**When is `maxdiff 0` the right gate?** Only when the recipe returned a **bfloat16** output and
+`torch.equal` was True on it. Both halves. An fp32 output means autocast skipped the op, and
+`exact=True` on an fp32 output is the trap above, not a result. In practice the modules that really
+are bf16-exact are the ones that move data without arithmetic: a gather, a reshape, a transpose, a
+slice. Anything with a multiply-accumulate in it will not be.
 
 Load the reference with the **weights the capture used**, not a fresh instantiation: different
 weights give a PCC near zero that reads as a catastrophic numerical failure and is two different
-models. `envelope` is then the module's threshold, not a band you chose. A module whose own bf16 recompute lands
-at 0.9993 cannot be held to 0.9999 by any port, and holding it to 0.99 passes a real bug. Record the
-measured value in the plan's Parity threshold column, replacing the guess, and record the fp32
-reference value beside it so the next reader can tell a tightening from a typo. Two cases to expect:
-a module is bf16-exact when `torch.equal(ref16.float(), ref32)` is **True**, and only then is its
-gate maxdiff 0 rather than a PCC. Do **not** read that off the PCC. In the worked example
-`blocks.0` prints `1.000000` at six places and its true PCC is 0.9999998807907104 with a maxdiff of
-**5.029e-03**, nowhere near bit-equal. Setting that module's gate to maxdiff 0 gives you a bar the
-reference's own bf16 recompute misses, and you will spend a day hunting a port bug that is the bar.
-Print `torch.equal` beside the PCC, and when the gate is a maxdiff, **round the bar up** from the
-measured envelope: a bar at exactly the envelope fails on the next run's last bit. A module
-whose envelope is worse than the band in `03-precision-and-numerics.md` §7 is telling you the module
-is numerically fragile before you have written a line of device code, which is worth knowing in
-Phase 1 rather than Phase 3.
+models. `envelope` is then the module's threshold, not a band you chose.
 
 Add `margin` on top only for the device-vs-torch bf16 accumulation difference, the same way the
 end-to-end envelope below does, and derive it from your own clean legs rather than inheriting a

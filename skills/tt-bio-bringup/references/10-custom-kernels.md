@@ -124,7 +124,7 @@ parent `CMakeLists.txt`, then:
 cmake -B build -DBUILD_PROGRAMMING_EXAMPLES=ON     # -B names the build dir; `cmake build` would
                                                   # read `build` as the SOURCE dir and fail.
                                                   # The flag is OFF by default.
-cmake --build build --target metal_example_<name>
+cmake --build build --target "metal_example_${NAME:?your example name}"
 ```
 
 Compute kernels JIT-compile at runtime, so editing a kernel `.cpp` needs no host rebuild. Running

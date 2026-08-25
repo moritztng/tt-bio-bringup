@@ -240,6 +240,32 @@ PLAN_HEADINGS = ["Reference", "Target", "Module tree", "Axes", "Op inventory", "
 MIN_TREE_ROWS = 3
 
 
+def check_section(path: Path, text: str, name: str) -> list[str]:
+    """A required section has to say something, and its `- Label:` bullets have to be answered.
+
+    Shared by both gates on purpose: the Phase 0 report arm exists to make `$REF_PY` and the
+    effort bar findable, and it used to pass with exactly those two bullets blank because only
+    the plan gate looked.
+    """
+    body = _section(text, name)
+    if body is None:
+        return []                          # already reported as a missing heading
+    problems = []
+    stripped = strip_code_blocks(body)
+    bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
+    empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]{1,80}:\s*$", l)]
+    if empty:
+        problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
+                        f"first is {empty[0]!r}")
+    # A table is content too: Randomness is legitimately a table and no prose.
+    content = [l for l in stripped.splitlines()
+               if l.strip() and not l.startswith("#")
+               and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
+    if not content:
+        problems.append(f"{path}: {name!r} is a heading with nothing under it.")
+    return problems
+
+
 def gate_plan(args) -> int:
     path = Path(args.path)
     if not path.is_file():
@@ -296,22 +322,7 @@ def gate_plan(args) -> int:
     # golden depends on. The gate printed "every section present" over four empty ones.
     for name in ("Reference", "Target", "Control flow", "Host-side pipelines", "Randomness",
                  "Risks"):
-        body = _section(text, name)
-        if body is None:
-            continue                      # already reported as a missing heading
-        stripped = strip_code_blocks(body)
-        bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
-        empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]{1,80}:\s*$", l)]
-        if empty:
-            problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
-                            f"first is {empty[0]!r}")
-        # A table is content too: Randomness is legitimately a table and no prose.
-        content = [l for l in stripped.splitlines()
-                   if l.strip() and not l.startswith("#")
-                   and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
-        if not content:
-            problems.append(f"{path}: {name!r} is empty. It is one of the sections this gate "
-                            "says is present, so it has to say something.")
+        problems += check_section(path, text, name)
 
     target = _section(text, "target")
     if target is None:
@@ -342,19 +353,13 @@ def gate_report(args) -> int:
     # on the command line is named because its rows are the evidence.
     text = path.read_text(encoding="utf-8", errors="replace")
     for want in args.require_heading or []:
-        body = _section(text, want)
-        if body is None:
-            continue                              # already reported as a missing heading
-        stripped = strip_code_blocks(body)
-        content = [l for l in stripped.splitlines()
-                   if l.strip() and not l.startswith("#")
-                   and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
-        if not content:
-            problems.append(f"{path}: {want!r} is a heading with nothing under it.")
-            continue
+        problems += check_section(path, text, want)
         if args.no_tables:
             continue                              # this document is prose, --no-tables said so
-        if not [tb for tb in parse_tables(stripped) if tb.rows]:
+        body = _section(text, want)
+        if body is None:
+            continue
+        if not [tb for tb in parse_tables(strip_code_blocks(body)) if tb.rows]:
             problems.append(
                 f"{path}: {want!r} has no table with data rows under it. The heading is not the "
                 "evidence; the rows are. If this section is genuinely prose, pass --no-tables.")

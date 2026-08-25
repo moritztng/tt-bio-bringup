@@ -65,7 +65,7 @@ Constraints, in the order they bite:
    raises `TT_FATAL: ... requires a Tracy-enabled build`; and on a real Tracy build `import ttnn`
    needs the python `tracy` module from `$TT_METAL_HOME/tools`.
    ```sh
-   export TT_METAL_HOME=<tracy source build>
+   export TT_METAL_HOME=/path/to/your/tt-metal-source-build
    export PYTHONPATH=$TT_METAL_HOME/ttnn:$TT_METAL_HOME/tools:$TT_METAL_HOME
    unset LD_LIBRARY_PATH   # a stale one resolves _ttnn.so against the wrong libttnncpp
    ```

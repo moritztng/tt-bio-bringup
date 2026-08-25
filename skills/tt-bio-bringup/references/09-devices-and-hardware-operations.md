@@ -98,8 +98,9 @@ device is clocked up at 60-68 W but computing nothing, and nothing under the run
 for minutes.
 
 ```bash
-ps -o pid,stat,wchan:24,etime -p <pid>              # Ssl + futex_do_wait
-top -b -n2 -d 1.5 -p <pid> | tail -3                # 0.0% CPU across 3+ minutes
+PID=<the process id>; PID=${PID:?}                  # a bare <pid> is a shell redirection
+ps -o pid,stat,wchan:24,etime -p "$PID"             # Ssl + futex_do_wait
+top -b -n2 -d 1.5 -p "$PID" | tail -3               # 0.0% CPU across 3+ minutes
 find "$RUN_DIR/" -newermt "5 minutes ago" -type f    # nothing = no progress
 tt-smi -s | grep -iE '"power"|"aiclk"'              # powered but idle
 ```
@@ -194,7 +195,9 @@ after something was SIGKILLed mid device-op.
 lspci -d 1e52:; dkms status; uname -r            # hardware present, DKMS state, running kernel
 ls /usr/src/tenstorrent-*/dkms.conf      # source present
 ls -d /usr/src/linux-headers-$(uname -r)         # headers present
-sudo dkms install tenstorrent/<version> -k $(uname -r) && sudo modprobe tenstorrent
+VER=$(apt list --installed 2>/dev/null | sed -n 's/^tenstorrent-dkms\/[^ ]* \([^ ]*\).*/\1/p')
+sudo dkms install "tenstorrent/${VER:?no tenstorrent-dkms installed}" -k "$(uname -r)" \
+    && sudo modprobe tenstorrent
 ls -l /dev/tenstorrent/ && tt-smi -ls
 ```
 

@@ -75,16 +75,16 @@ The template starts red, and it names every hole:
 ```
 GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
-  notes/PORT_PLAN.md:44: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
-  notes/PORT_PLAN.md:55: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
-  notes/PORT_PLAN.md:59: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
-  notes/PORT_PLAN.md:75: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
-  notes/PORT_PLAN.md:86: empty cell(s) under 'Decision'
-  notes/PORT_PLAN.md:87: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:46: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
+  notes/PORT_PLAN.md:57: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
+  notes/PORT_PLAN.md:61: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
+  notes/PORT_PLAN.md:77: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
   notes/PORT_PLAN.md:88: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:89: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:90: empty cell(s) under 'Decision'
-  notes/PORT_PLAN.md:42: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
+  notes/PORT_PLAN.md:91: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:92: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:44: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
     at least 3: the leaves, the blocks they compose into, and the whole model.
   notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
   notes/PORT_PLAN.md: 'Target' has 4 unanswered item(s), first is '- Chip generation and card count:'
@@ -168,6 +168,36 @@ With those filled in, the gate flips:
 GATE 0: phase 0 plan notes/PORT_PLAN.md is complete: every section present, every table row
 filled, no placeholders, nothing deferred.
 ```
+
+**The second gate arm, which the plan alone does not cover.** `notes/PORT_STATE.md` is what a fresh
+session reads first, and the two things it has to carry are the interpreter each gate runs under and
+the effort bar, because a session that cannot find those re-derives them differently.
+
+```markdown
+## Environment
+
+- Chip generation, card count, host: Blackhole p150a, 1 card, unconfirmed until the rack lands
+- Package versions that matter (ttnn / tt-metal / torch), pinned where: torch 2.8.0; ttnn read with
+  `python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"`, not yet installed
+- The interpreter each gate runs under: `REF_PY=./env/bin/python3`, one venv, the reference has no
+  conflicting pins
+- The effort bar for this campaign, as two numbers: build a lever at >= 5% of end-to-end, or >= 2%
+  if it is under a day of work
+- Baseline test-suite result before any of my changes: not yet, day zero step 4 is blocked on the card
+```
+
+```bash
+python3 scripts/port_gate.py report notes/PORT_STATE.md --no-tables \
+  --require-heading "Environment" --require-heading "Decisions taken"
+```
+
+```
+GATE 0: report notes/PORT_STATE.md is complete: every section present, every table row filled, no
+placeholders, nothing deferred.
+```
+
+Blank either of those last two bullets and it goes red, naming which. That is deliberate: they are
+the two facts the arm exists for, and until recently the arm passed with both of them empty.
 
 Then, before trusting it, make it fail. Blank one golden cell and confirm the gate notices:
 
@@ -271,25 +301,28 @@ gate for a reason that is not a defect.
 distance is the module's envelope, and it replaces the Phase 0 guess. The recipe is
 `02-parity-and-correctness.md` §3.4; **these numbers are real**, measured on this example:
 
-| Module | Envelope PCC | Maxdiff | Phase 0 guess | Gate becomes |
-|---|---|---|---|---|
-| `embed` | 1.0 (bit-equal) | 0.000e+00 | maxdiff 0 | maxdiff 0, the guess was right |
-| `blocks.0.norm1` | 1.0 (bit-equal) | 0.000e+00 | PCC >= 0.9999 | **maxdiff 0**, stronger than the guess |
-| `blocks.0.attn` | 0.999988 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.999988 |
-| `blocks.0.ffn` | 0.999991 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.999991 |
-| `blocks.0` | 0.99999988 | 5.029e-03 | PCC >= 0.999 | maxdiff <= 6.0e-03 |
-| `head.proj` | 0.999996 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.999996 |
-| `head.out` | 0.999992 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.999992 |
-| `<root>` | 0.999985 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.999985 |
+| Module | Autocast dtype | Envelope PCC | Maxdiff | Phase 0 guess | Gate becomes |
+|---|---|---|---|---|---|
+| `embed` | fp32, **skipped** | n/a | n/a | maxdiff 0 | 7.8e-03, measured with an explicit cast |
+| `blocks.0.norm1` | fp32, **skipped** | n/a | n/a | PCC >= 0.9999 | 1.4e-02, measured with an explicit cast |
+| `blocks.0.attn` | bf16 | 0.99998808 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.99998 |
+| `blocks.0.ffn` | bf16 | 0.99999052 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.99999 |
+| `blocks.0` | fp32, **skipped** | n/a | n/a | PCC >= 0.999 | 2.2e-02, measured with an explicit cast |
+| `head.proj` | bf16 | 0.99999577 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.99999 |
+| `head.out` | bf16 | 0.99999154 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.99999 |
+| `<root>` | bf16 | 0.99998522 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.99998 |
 
-Read the second row and the fifth. `blocks.0.norm1` is **bf16-exact**: `torch.equal` is True, so its
-gate is bit-equality and the guessed `PCC >= 0.9999` would have let a real regression through.
-`blocks.0` looks identical if you read the PCC column rounded, and is not: its true PCC is
-0.99999988 and its maxdiff is 5.029e-03. **Decide bf16-exactness with `torch.equal`, never with a
-printed PCC**, and when the gate is a maxdiff, round the bar up from the envelope, or the next run's
-last bit fails it. Every guess in the Phase 0 table was too loose, which is the direction
-guesses go. A module whose bf16 self-error is 4e-3 cannot be held to 1e-4 no matter how good the
-port is, and holding it to 1e-2 passes a real bug.
+**Three of eight rows came back fp32, and that is the finding.** `torch.autocast` keeps
+normalizations, softmax and a list of other ops in fp32, so for `embed`, `blocks.0.norm1` and
+`blocks.0` the instrument measured nothing and would have reported a perfect score: `exact=True`,
+`maxdiff 0.000e+00`. Reading that as "bf16-exact, gate it at maxdiff 0" sets a bar a correct device
+LayerNorm misses by 1.3e-02. **Check the output dtype before you believe the number.** Those three
+rows are measured with an explicit bf16 cast instead, which rounds the accumulation too and is
+therefore an upper bound; the plan records that it is.
+
+The five rows autocast did cast tell the ordinary story: every Phase 0 guess was too loose, by about
+an order of magnitude each. The bars above are rounded down from the measured envelope for a PCC and
+up for a maxdiff, so the next run's last bit does not fail them.
 
 One trap, and it cost this example a run: replay through the reference **with the weights the capture
 used**. Re-instantiating the model with a different seed gives you PCC around zero and looks like a
