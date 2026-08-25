@@ -41,7 +41,7 @@ need a variant of an existing helper, extend the helper with a default-safe para
 
 ## Where the reference documents are
 
-This skill ships 14 reference documents and one gate script, and they are not in the repository you
+This skill ships 15 reference documents and one gate script, and they are not in the repository you
 are porting into. Find them once, at the start of the session, and pass the path to any subagent you
 spawn:
 
@@ -121,7 +121,10 @@ command instead of a decision, which is the only reason it actually gets done.
 ### Phase 0 - Map the model (no device code)
 
 Read: `references/01-orientation.md`, plus `references/02-parity-and-correctness.md` §1.2-1.4 for
-the fixture conventions and §3.4 for how thresholds get chosen, because the plan has to name both. `examples/worked-example.md`
+the fixture conventions and §3.4 for how thresholds get chosen, because the plan has to name both,
+and `references/15-torch-to-ttnn-op-map.md` for the op-inventory column, which is the one place the
+plan asks you for a fact rather than a decision. Do not guess a ttnn op name: §1 of that document
+answers it in one command. `examples/worked-example.md`
 shows a filled-in plan for a small model, with the gate output, if you would rather see one than read
 about one.
 
@@ -335,6 +338,7 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/perf_regres
 | Test suite and release gate design | `references/12-testing-and-gates.md` |
 | A specific symptom, indexed by how it looks | `references/13-failure-atlas.md` |
 | Running this as a months-long agentic campaign | `references/14-running-a-long-campaign.md` |
+| Which ttnn op replaces this torch op | `references/15-torch-to-ttnn-op-map.md` |
 | One small model taken from Phase 0 to Phase 6, filled in | `examples/worked-example.md` |
 
 When something breaks, go to `13-failure-atlas.md` first. It is indexed by symptom in the words you
@@ -357,7 +361,7 @@ Constraints when you do fan out:
 `agents/` in this repository holds ready-made subagent definitions for four working roles
 (`parity-porter`, `perf-analyst`, `kernel-author`, `gate-auditor`) and one audit role,
 `cold-reader`, which does not do the work but reads your own documents and briefs back to you as a
-newcomer would. Run the cold reader on your `PORT_PLAN.md` before you hand any of it out.
+newcomer would. Run the cold reader on your `notes/PORT_PLAN.md` before you hand any of it out.
 
 ## Templates
 

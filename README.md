@@ -13,7 +13,7 @@ run is the golden.
 ```
 skills/tt-bio-bringup/
   SKILL.md                  the workflow: 8 phases, each with a machine-checkable exit gate
-  references/               14 reference documents, loaded on demand
+  references/               15 reference documents, loaded on demand
   templates/                the documents the workflow expects you to keep
   gates/port_gate.py        the gate checker the phases call, standard library only
   examples/                 one small model through every phase, plus a runnable Phase 1 capture
@@ -42,6 +42,7 @@ long list of ways a port silently goes wrong while every test stays green.
 | `12-testing-and-gates.md` | Test layers, and gates that cannot pass vacuously |
 | `13-failure-atlas.md` | Symptom-indexed atlas of real failure modes |
 | `14-running-a-long-campaign.md` | Running this as a months-long agentic effort without losing the plot |
+| `15-torch-to-ttnn-op-map.md` | Which ttnn op replaces which torch op, and how to check for yourself |
 
 ## Install
 
@@ -89,8 +90,10 @@ test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
 ## Using it
 
 First get to the starting line: fork and install tt-bio, check the cards answer, run its test suite,
-fold one existing model. That is `references/01-orientation.md`, "Day zero", six commands. Do not skip
-it: everything after it is uninterpretable until one existing model folds on your card.
+fold one existing model. That is `references/01-orientation.md`, "Day zero". Everything from Phase 2 on is
+uninterpretable until one existing model folds on your card, so do not skip it. You do not have to
+wait for it either: Phase 0 and Phase 1 need torch and nothing else, so if the hardware is still in
+a box, start Phase 0 today and do day zero alongside it.
 
 Then, in your fork:
 

@@ -4,7 +4,7 @@ Written in Phase 0, before any device code. Updated when the shape of the work c
 deleted. If a section below is empty, Phase 0 is not finished, and the Phase 0 gate says so:
 
 ```bash
-python3 scripts/port_gate.py plan PORT_PLAN.md
+./env/bin/python3 scripts/port_gate.py plan notes/PORT_PLAN.md
 ```
 
 ## Reference

@@ -119,7 +119,7 @@ writing that down stops someone padding it twice.
 | bins | 16 | static | 16 | under one tile: pad to 32, slice the first 16 back |
 | batch | B | static at 1 | 1 | not batched in this port |
 
-**The risk register: the ops with no clean equivalent.** Two entries, and the first one is the whole
+**The risk register: the ops with no clean equivalent.** Three entries, and the first is the whole
 performance story of this model.
 
 1. The head's outer sum materialises `[1, L, L, 128]` before projecting to 16 bins. At L=117 that is

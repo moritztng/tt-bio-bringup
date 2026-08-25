@@ -4,7 +4,7 @@ The document that says what "correct" means here and shows it holds. Written dur
 finished before Phase 5 starts, because a performance number on an unverified port is worthless.
 
 ```bash
-python3 scripts/port_gate.py report docs/yourmodel-parity.md \
+./env/bin/python3 scripts/port_gate.py report docs/yourmodel-parity.md \
     --require-heading "Component parity" --require-heading "Negative controls"
 ```
 

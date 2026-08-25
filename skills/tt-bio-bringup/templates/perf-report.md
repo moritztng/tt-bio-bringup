@@ -4,7 +4,7 @@ Every number here must name the hardware, the shape, the dtype, the warm state, 
 and the exact command. A number without those is not reproducible and does not belong in this file.
 
 ```bash
-python3 scripts/port_gate.py report docs/yourmodel-perf.md \
+./env/bin/python3 scripts/port_gate.py report docs/yourmodel-perf.md \
     --require-heading "Measured roofs" --require-heading "Op census" --require-heading "Levers"
 ```
 
