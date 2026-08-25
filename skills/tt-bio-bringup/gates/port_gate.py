@@ -456,6 +456,14 @@ def gate_determinism(args) -> int:
         if a.is_dir():
             print(f"GATE 2: {a} is a directory. --artifact takes the file whose bytes must match.")
             return 2
+        if a.is_symlink():
+            # We move artifacts aside and let the run write fresh ones. Through a symlink that
+            # silently replaces the link with a regular file and leaves the real target stale,
+            # which is a change to the reader's tree that nothing here announced.
+            print(f"GATE 2: {a} is a symlink. Name the file it points at "
+                  f"({a.resolve()}), because this gate moves the artifact aside and lets your "
+                  "command write a fresh one, which would replace the link rather than follow it.")
+            return 2
     # Move the existing artifacts aside rather than deleting them. A capture is a CPU reference
     # run that can take thousands of seconds, `02` says to gitignore parity_artifacts/, and the
     # commonest way to get here is a --run that never starts (an unexported $SKILL, a typo). If
