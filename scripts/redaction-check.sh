@@ -21,7 +21,16 @@ if ! echo x | grep -qP 'x(?!y)' 2>/dev/null; then
   exit 2
 fi
 
-FILES=$(git ls-files -co --exclude-standard 2>/dev/null || find . -type f -not -path './.git/*')
+# In a git checkout, -c -o --exclude-standard is tracked + untracked, honouring .gitignore, which
+# is the set that is about to be published. Outside one (a tarball download), fall back to find
+# and prune the same build noise .gitignore would have: a .pyc carries the absolute path of the
+# machine that built it, and the two code paths scanning different file sets is how this check
+# went blind once before.
+FILES=$(git ls-files -co --exclude-standard 2>/dev/null \
+        || find . -type f -not -path './.git/*' -not -path '*/__pycache__/*' -not -name '*.pyc')
+# The local denylist is by construction a file full of the strings we are searching for. It is
+# gitignored, so git never lists it; find does, and then every pattern in it hits itself.
+FILES=$(printf '%s\n' "$FILES" | grep -v '^\(\./\)\?scripts/redaction-local\.txt$')
 [ -z "$FILES" ] && { echo "no files to scan"; exit 2; }
 
 # Each entry: <label>|<extended regex>. Case-insensitive unless the pattern needs case.
