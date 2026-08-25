@@ -82,14 +82,31 @@ Before you trust a green done-check, break the deliverable and watch it fail.
 
 ```bash
 CHK='grep -qE "^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}" notes/state-x.md'
-mv notes/state-x.md /tmp/ && bash -c "$CHK"; echo "broken -> $?"   # MUST be non-zero
-mv /tmp/state-x.md notes/  && bash -c "$CHK"; echo "intact -> $?"  # MUST be 0
+cp notes/state-x.md /tmp/state-x.bak
+sed -i 's/^VERDICT-P4:.*/VERDICT-P4: GO/' notes/state-x.md          # drop the pcc= the check wants
+bash -c "$CHK"; echo "broken -> $?"                                  # MUST be non-zero
+cp /tmp/state-x.bak notes/state-x.md
+bash -c "$CHK"; echo "intact -> $?"                                  # MUST be 0
 ```
+
+**Edit the file, do not move it away.** Deleting the thing under test makes almost any check
+non-zero, and a check that fails because its subject is missing has not been shown to notice a
+defect: the whole point here is that a verdict line without a `pcc=` is a real, plausible thing a
+session writes. `port_gate.py prove-red` refuses a break that removes a file rather than changing
+it, for exactly this reason.
 
 Run it through a fresh `bash -c`, not your interactive prompt: an interactive shell often has `grep`
 shadowed by a function with different exit semantics, so a hand-check at the prompt can look right
 and still be wrong about what a script does. `scripts/port_gate.py prove-red` is this loop with the
-exit codes read for you.
+exit codes read for you, and with the refusals above built in:
+
+```bash
+python3 scripts/port_gate.py prove-red \
+    --check         "$CHK" \
+    --break         "sed -i 's/^VERDICT-P4:.*/VERDICT-P4: GO/' notes/state-x.md" \
+    --restore       "cp /tmp/state-x.bak notes/state-x.md" \
+    --expect-change notes/state-x.md
+```
 
 Two authoring constraints that prevent whole classes of this:
 

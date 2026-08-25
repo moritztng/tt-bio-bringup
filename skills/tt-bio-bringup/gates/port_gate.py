@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -33,13 +34,13 @@ from pathlib import Path
 
 sys.stdout.reconfigure(line_buffering=True)   # keep our labels interleaved with children's output
 
-PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.\-]*>", re.I)
+PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.,'\-]*>", re.I)
 #: Literal angle-bracket names the reference documents require, not slots to fill.
 LITERAL_ANGLE = {"<root>"}
 #: Angle brackets holding a real clause, e.g. "<x> is <y>", are prose rather than a template slot.
 #: A stopword alone is not enough: "<url of the repo>" and "<hash of the checkpoint>" are exactly
 #: the holes this check exists to find, and every one of them contains "of" or "the".
-NOT_A_PLACEHOLDER = re.compile(r"\b(is|are|was|were|means|becomes|equals|if|then|when)\b", re.I)
+NOT_A_PLACEHOLDER = re.compile(r"\b(is|are|was|were|means|becomes|equals)\b\s+\S+\s+\S+", re.I)
 DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon"
                            r"|to be (decided|determined|measured|chosen|picked))\b", re.I)
 #: Softer phrasings. Only a hole when they are the *value* of something: in a prose paragraph
@@ -65,8 +66,9 @@ GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
                        r"|[\w.-]+/[\w.-]+/[\w./-]+"
                        r"|\bnone needed\b", re.I)
 #: A path-shaped answer that is really a shrug. "n/a" reads as a directory to a loose regex.
-GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+|tbd/.*|todo/.*"
-                           r"|to/be/[a-z]+|[a-z]+/to/[a-z]+)$", re.I)
+GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+"
+                           r"|(tbd|todo|not|to|ask|later|unknown|maybe|decide|pick)/.*"
+                           r"|.*/(yet|decided|known|later|tbd|todo|someone|author)(/.*)?)$", re.I)
 #: Columns whose whole purpose is to record that something failed on purpose.
 MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
 #: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
@@ -389,7 +391,8 @@ def gate_plan(args) -> int:
         size = next((l for l in target.splitlines() if "size range" in l.lower()), None)
         if size is None:
             problems.append(f"{path}: the Target section has no 'size range' line.")
-        elif len(re.findall(r"\d+", size)) < 2:
+        elif re.search(r"\b(see|per|cf\.?|section|§)\b", size, re.I) or \
+                len(re.findall(r"\d+", size)) < 2:
             problems.append(
                 f"{path}: the supported size range reads {size.strip(' -*')!r}. That is one number "
                 "or none. State both ends, because Phase 4 runs a ladder across exactly this range "
@@ -409,7 +412,11 @@ def gate_report(args) -> int:
     # whether the document contained a table *somewhere*. So a perf report with Measured roofs,
     # Op census and Levers all empty, plus one unrelated table, read GATE 0. Every section named
     # on the command line is named because its rows are the evidence.
-    text = path.read_text(encoding="utf-8", errors="replace")
+    # Fences stripped BEFORE any section lookup. A `# comment` inside a ```bash block is not a
+    # heading, and reading raw text made one act as one: it could end a section early (rejecting
+    # a filled report) or start a fake one (passing a report whose real section is empty).
+    # gate_plan already stripped first, so only this path was affected.
+    text = strip_code_blocks(path.read_text(encoding="utf-8", errors="replace"))
     for want in args.require_heading or []:
         problems += check_section(path, text, want)
         if args.no_tables:
@@ -417,7 +424,7 @@ def gate_report(args) -> int:
         body = _section(text, want)
         if body is None:
             continue
-        if not [tb for tb in parse_tables(strip_code_blocks(body)) if tb.rows]:
+        if not [tb for tb in parse_tables(body) if tb.rows]:
             problems.append(
                 f"{path}: {want!r} has no table with data rows under it. The heading is not the "
                 "evidence; the rows are. If this section is genuinely prose, pass --no-tables.")
@@ -474,16 +481,24 @@ def gate_determinism(args) -> int:
     stash = {}
     for a in artifacts:
         if a.is_file():
-            keep = a.with_suffix(a.suffix + ".prove-red-backup")
+            keep = a.with_suffix(a.suffix + ".determinism-backup")
             a.replace(keep)
             stash[a] = keep
 
     def _restore_stash():
+        """Put the originals back, unconditionally.
+
+        The first version only restored when the path was free, and deleted the backup
+        otherwise. A run that failed *after* writing something therefore left its partial
+        output in place and destroyed the original, under a message saying the original had
+        been put back. That is worse than not stashing at all.
+        """
         for a, keep in stash.items():
-            if keep.is_file() and not a.is_file():
-                keep.replace(a)
-            elif keep.is_file():
-                keep.unlink()
+            if not keep.is_file():
+                continue
+            if a.is_file():
+                a.unlink()                     # whatever the failed run left is not the golden
+            keep.replace(a)
 
     for attempt in (1, 2):
         for a in artifacts:
@@ -553,6 +568,19 @@ EXISTENCE_ONLY = re.compile(
 def gate_prove_red(args) -> int:
     watched = args.expect_change or []
 
+    # Every path-looking token the check names. If the break changes one of these and you did
+    # not list it, the run proved that some *other* file moved while the check went red for a
+    # reason nobody recorded. `--check 'cat model.py >/dev/null' --break 'mv model.py x; echo >>s'
+    # --expect-change s` used to pass: the fault was deleting the file the check reads.
+    def _paths_in(cmd: str) -> list[str]:
+        out = []
+        for tok in re.findall(r"[\w./~-]+", cmd):
+            if "/" in tok or re.search(r"\.\w{1,6}$", tok):
+                q = Path(os.path.expanduser(tok))
+                if q.exists():
+                    out.append(str(q))
+        return out
+
     if EXISTENCE_ONLY.match(args.check):
         print(f"GATE 2: {args.check!r} only asks whether a path exists.")
         print("  There is no fault you can inject into that file that it will notice, because the\n"
@@ -580,6 +608,8 @@ def gate_prove_red(args) -> int:
         return 2
 
     was = _fingerprint(watched)
+    check_paths = [q for q in _paths_in(args.check) if q not in {str(Path(w)) for w in watched}]
+    check_before = _fingerprint(check_paths)
     print(f"--- break it: {getattr(args, 'break')}")
     if _sh(getattr(args, "break")) != 0:
         print("GATE 2: the break command itself failed, so the fault was never injected.")
@@ -606,6 +636,18 @@ def gate_prove_red(args) -> int:
                   "that fails because the file is missing has not been shown to fail on a defect. "
                   "Edit the file, do not move it.")
             return 2
+
+    # A file the check reads, changed by the break, and not declared.
+    moved = [q for q in check_paths if _fingerprint([q])[q] != check_before[q]]
+    if moved:
+        print(f"GATE 2: the break changed {', '.join(moved)}, which your check reads, and you did "
+              "not list it in --expect-change.")
+        print("  Either that is the file you meant to break, in which case declare it and the\n"
+              "  deleted-rather-than-edited guard applies to it, or the break is touching\n"
+              "  something it should not and the red you are about to see is not the red you\n"
+              "  think it is.")
+        _sh(args.restore)
+        return 2
 
     print(f"--- check, with the fault injected: {args.check}")
     broken = _sh(args.check)
