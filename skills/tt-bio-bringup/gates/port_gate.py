@@ -49,6 +49,11 @@ DEFERRED = re.compile(
 VAGUE_CELL = re.compile(
     r"^(lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
     r"|maybe|probably|roughly|approx|\?+|-+|\.+|etc\.?|see above|as needed|standard|default)$", re.I)
+#: The escape hatch. A blank cell is indistinguishable from an unfinished one, so it stays a
+#: failure, but "nothing here yet" is a real answer in early phases and needs a way to be said.
+#: Deliberately explicit: you have to type it, so the record shows you decided rather than forgot.
+NOT_YET = re.compile(r"^(none yet|not yet|none needed|n/a, .+|unconfirmed(,.*)?|"
+                     r"first pass, no fix needed|no fix needed)$", re.I)
 #: A named golden is a file or a path, not a promise. Accept an explicit exactness note too.
 GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
                        r"|[\w.-]+/[\w.-]+/[\w./-]+"
@@ -153,7 +158,10 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
         problems.append(f"{path}: no filled table anywhere, so nothing here is a record of anything")
     for t in tables:
         if not t.rows:
-            problems.append(f"{path}:{t.line_no}: table [{' | '.join(t.header)}] has no data rows")
+            problems.append(
+                f"{path}:{t.line_no}: table [{' | '.join(t.header)}] has no data rows. If it is "
+                "genuinely empty at this phase, say so in a row rather than leaving it blank: a "
+                "blank table and a forgotten table look identical.")
             continue
         for n, row in t.rows:
             if len(row) < len(t.header):
@@ -166,7 +174,9 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 problems.append(f"{path}:{n}: empty cell(s) under {', '.join(blank)!r}")
             for i, cell in enumerate(row):
                 col = t.header[i] if i < len(t.header) else f"col{i + 1}"
-                v = cell.strip(" *`")
+                v = cell.strip().strip("*`").strip()
+                if v and NOT_YET.fullmatch(v):
+                    continue                       # an explicit "nothing here yet" is an answer
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" column answered "no" is the finding, not a filled cell.

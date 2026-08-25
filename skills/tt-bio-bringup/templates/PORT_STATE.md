@@ -25,6 +25,7 @@ was established. Delete what is no longer true rather than appending a correctio
 
 | Question | Who or what can answer it | Blocking? |
 |---|---|---|
+| none yet | none yet | none yet |
 
 ## Decisions taken
 
@@ -38,3 +39,4 @@ metric.
 
 | Date | Lever | Predicted ceiling | Why killed |
 |---|---|---|---|
+| none yet | none yet | none yet | none yet |
