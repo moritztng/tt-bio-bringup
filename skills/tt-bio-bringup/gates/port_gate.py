@@ -42,7 +42,8 @@ DEFERRED = re.compile(
     r"|we will (decide|pick|choose|look|figure|work|measure|find)"
     r"|(will|to) be (decided|determined|measured|chosen|picked)"
     r"|pick one (in|during|at) |whatever .{0,30}turns out"
-    r"|look(s)? right|seems right|good enough|later|unknown|unclear|not sure|no idea"
+    r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
+    r"|seems right|good enough for now|not sure yet|no idea"
     r")\b", re.I)
 #: A cell that says nothing. "lots", "some", "a few": not a value.
 VAGUE_CELL = re.compile(
