@@ -100,8 +100,8 @@ Port the model in ./reference_impl to Tenstorrent. Start at Phase 0 of the tt-bi
 
 Claude reads `SKILL.md`, writes `notes/PORT_PLAN.md`, and works the phases. Each phase names the
 reference documents to read before starting it, so context stays small until it is needed.
-`examples/worked-example.md` shows the whole thing done on a small model if you would rather see it
-than read about it.
+`skills/tt-bio-bringup/examples/worked-example.md` shows the whole thing done on a small model if
+you would rather see it than read about it.
 
 Three things to hold Claude to, because they are what make the difference:
 
