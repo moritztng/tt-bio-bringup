@@ -121,11 +121,28 @@ check "blank parity template is red" 1 x report skills/tt-bio-bringup/templates/
 "$PY" "$GATE" plan skills/tt-bio-bringup/templates/PORT_PLAN.md > "$TMP/live" 2>&1
 live_n=$(sed -n '1s/.*finished\. \([0-9]*\) problem.*/\1/p' "$TMP/live")
 doc_n=$(grep -m1 -o "is not finished\. [0-9]* problem" "$EX" | grep -o "[0-9]*")
-if [ "$live_n" = "$doc_n" ]; then
-    printf '  ok    pasted gate output still matches a live run (%s problems)\n' "$live_n"
+# Every PORT_PLAN.md:<n> the example pastes, against every one a live run prints. The count alone
+# is not enough: an edit low in the template shifts line numbers without changing how many
+# problems there are, and that is the stale-output case that actually happened.
+live_l=$("$PY" - "$TMP/live" <<'PYEOF'
+import re, sys
+print(" ".join(sorted(set(re.findall(r"PORT_PLAN\.md:(\d+):", open(sys.argv[1]).read())), key=int)))
+PYEOF
+)
+doc_l=$("$PY" - "$EX" <<'PYEOF'
+import re, sys
+t = open(sys.argv[1]).read()
+i = t.find("GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished.")
+blk = t[i:t.find("```", i)] if i >= 0 else ""
+print(" ".join(sorted(set(re.findall(r"PORT_PLAN\.md:(\d+):", blk)), key=int)))
+PYEOF
+)
+if [ "$live_n" = "$doc_n" ] && [ "$live_l" = "$doc_l" ]; then
+    printf '  ok    pasted gate output still matches a live run (%s problems, lines %s)\n' "$live_n" "$live_l"
 else
-    printf '  FAIL  pasted gate output is stale: the example says %s problems, a live run says %s.\n' \
-           "$doc_n" "$live_n"
+    printf '  FAIL  pasted gate output is stale.\n'
+    printf '        problems: example says %s, live run says %s\n' "$doc_n" "$live_n"
+    printf '        lines:    example says [%s], live run says [%s]\n' "$doc_l" "$live_l"
     printf '        Re-paste it. A document that says its output came from a run has to mean it.\n'
     fail=1
 fi

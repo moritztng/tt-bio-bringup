@@ -76,7 +76,10 @@ GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
   notes/PORT_PLAN.md:59: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
   notes/PORT_PLAN.md:75: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
   notes/PORT_PLAN.md:86: empty cell(s) under 'Decision'
-  ... four more Evaluation-set rows ...
+  notes/PORT_PLAN.md:87: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:88: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:89: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:90: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:42: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
     at least 3: the leaves, the blocks they compose into, and the whole model.
   notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
