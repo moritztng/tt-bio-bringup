@@ -65,28 +65,29 @@ See `11-tt-bio-integration.md` for the file-by-file conventions.
 
 Nothing below is Tenstorrent-specific expertise. It is the install.
 
-**You do not have to wait for it.** Phase 0 and Phase 1 are card-free by construction: mapping the
-model and capturing a CPU golden need torch, plus an importable `ttnn` for the plan's op-inventory
-column, and they are usually a week of work. Neither needs a card: `import ttnn` works with no device
-present as long as `TT_VISIBLE_DEVICES` is pinned empty, which is what
-`15-torch-to-ttnn-op-map.md` §1 does.
+**You do not have to wait for it.** If your hardware is still in a box or the driver is not up,
+start Phase 0 today and do day zero alongside it. Phase 0 and Phase 1 are card-free by construction,
+they need torch and nothing on the device, and they are usually a week of work.
 
-To be precise about what waits on what, because two things are true at once: **the Phase 0 gate
-never waits**, since `port_gate.py` is standard library only and runs under any `python3`. **One
-Phase 0 column prefers step 2**, the op inventory, because resolving a ttnn name is better than
-guessing it. If you cannot build `env` yet, fill that column from
-`15-torch-to-ttnn-op-map.md` §2's table, mark the rows you could not resolve, and re-resolve them in
-Phase 2 when the environment exists. Write that decision in `notes/PORT_STATE.md`; do not let it
-block the phase. If
-your hardware is still in a box, or the driver is not up yet, start Phase 0 now and do day zero in
-parallel. What you cannot do is enter **Phase 2**, where the first device code runs, before steps 3
-to 5 below pass. Two Phase 0 fields do want the hardware (chip generation and card count): write your
-intent, mark it unconfirmed, and confirm it at step 3.
+Three details, so you know exactly what waits on what:
+
+- **The Phase 0 gate never waits.** `port_gate.py` is standard library only and runs under any
+  `python3`, built `env` or not.
+- **One Phase 0 column prefers step 2.** The op inventory is better resolved than guessed, and
+  resolving it imports `ttnn`. That import needs no card, only `TT_VISIBLE_DEVICES` pinned empty,
+  which is what `15-torch-to-ttnn-op-map.md` §1 does. If you cannot build `env` yet, fill the column
+  from §2's table, mark the rows you could not resolve, and re-resolve them in Phase 2. Write that
+  decision in `notes/PORT_STATE.md` rather than letting it block the phase.
+- **Two Phase 0 fields do want the hardware**, chip generation and card count. Write your intent,
+  append "unconfirmed", and confirm at step 3.
+
+What you cannot do is enter **Phase 2**, where the first device code runs, before steps 3 to 5 pass.
 
 **1. Fork and clone tt-bio.** Fork `https://github.com/moritztng/tt-bio` on GitHub, then:
 
 ```bash
-GH_USER=your-github-username        # bash reads <you> as a redirection, so use a variable
+GH_USER=your-github-username        # a variable, because bash reads an angle-bracket
+                                    # placeholder as a redirection and the paste fails
 git clone "https://github.com/$GH_USER/tt-bio.git"
 cd tt-bio
 git remote add upstream https://github.com/moritztng/tt-bio.git
