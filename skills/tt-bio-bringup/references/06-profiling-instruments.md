@@ -242,9 +242,14 @@ env -u LD_LIBRARY_PATH TT_METAL_HOME=$TT_METAL_HOME \
     -- /abs/path/to/profile_target.py
 # Not `grep -c ... # must be 0`: grep exits 1 when the count is 0, so the good outcome is the
 # failing one, and with a glob -c prints file:count per file rather than one number.
-if grep -q "markers were dropped" /tmp/prof/*.log; then
+shopt -s nullglob; logs=(/tmp/prof/*.log)
+if [ ${#logs[@]} -eq 0 ]; then
+    # An unexpanded glob makes grep exit 2 and an "else" branch fire, so "no logs" reads as
+    # "no problem". The profiler writing nothing is the worst outcome, not the best one.
+    echo "no profiler logs at all: the run wrote nothing, so there is nothing to trust"; false
+elif grep -q "markers were dropped" "${logs[@]}"; then
     echo "markers dropped: the trace is incomplete, raise --op-support-count and re-run"; false
-else echo "no dropped markers"; fi
+else echo "no dropped markers in ${#logs[@]} log(s)"; fi
 ```
 
 4. Aggregate the ops report with the snippet in §4. That is the census: op, ms, calls, %, µs/call.

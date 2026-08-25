@@ -240,7 +240,7 @@ torch are ~100% one-signed injects a bias that grows linearly with chain length.
 disagreements are ~50/50 is symmetric noise, and "fixing" it just redraws the random walk.
 **Check.** Measure the *fraction of disagreements pointing the same direction*, not the mismatch
 rate. One op at 11% mismatch and 100% one-sided was worth a clean win; a sibling at 10% mismatch
-and 46% one-sided was a measured regression when widened to fp32.
+and 46% positive, which is symmetric, was a measured regression when widened to fp32.
 **Fix.** Widen only the one-sided ops.
 **Guard.** Record the one-sidedness number in the port's precision doc next to each widened op, so
 the next pass does not re-propose the symmetric one.
@@ -777,7 +777,7 @@ measured-vs-model gap as a real inefficiency.
 **Mechanism.** A gate script launched with the system `python3` picks up whatever ttnn is on that
 interpreter's path, not the version pinned in `pyproject.toml`. Under the wrong wheel two accuracy
 legs read high enough to fail a release on a difference that was never code.
-**Check.** `python -c "import importlib.metadata as m; print(m.version('ttnn'))"` under the exact
+**Check.** `./env/bin/python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"` under the exact
 interpreter the gate runs, compared against the pin. Read it from the package metadata, not from a
 `ttnn.__version__` attribute: `ttnn` does not define one, and the metadata lookup answers without
 importing the package, which takes seconds.

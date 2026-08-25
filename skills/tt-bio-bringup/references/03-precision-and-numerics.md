@@ -155,10 +155,13 @@ its disagreements with torch point the same direction**, not how many elements d
 d = (tt_out.float() - ref_out.float()).flatten()
 nz = d[d != 0]
 print("mismatch %", 100 * nz.numel() / d.numel(),
-      "one-sided %", 100 * max((nz > 0).float().mean(), (nz < 0).float().mean()).item())
+      "positive %", 100 * (nz > 0).float().mean().item())
 ```
 
-Near 100% one-sided is a real bias that compounds linearly with depth, worth widening. Near 50% is
+Report the fraction **positive**, not `max(pos, neg)`: those two sum to 1 over non-zero elements, so the
+max is >= 50% by construction and a symmetric residual can never show up as one.
+
+Near 100% or near 0% is a real bias that compounds linearly with depth, worth widening. Near 50% is
 symmetric rounding noise: "fixing" it redraws a random walk and can land worse. Both outcomes measured
 on the same model in the same week.
 
@@ -168,7 +171,7 @@ Over a 48-block x 4-recycle residual trunk (432 adds) the per-block error growth
 vs 1.036 for a clean torch-bf16 arm, and `(1.0740/1.0359)**47 = 5.5` correctly predicted the observed
 5.2x miss at block 47. Routing that add through fp32 (typecast, add, typecast) is bit-identical to
 torch and cost 0.42 s over four trunk passes. The identical fix on bf16 `sigmoid` in the same model,
-where disagreements were 10.38% of elements but only 46.2% one-sided, was bit-identical to torch
+where disagreements were 10.38% of elements and 46.2% **positive**, which is symmetric, was bit-identical to torch
 per-op and a **measured end-to-end regression**, reproduced twice.
 
 Blast radius: across five models sharing one op, the same rounding fix improved one 3.4x, improved

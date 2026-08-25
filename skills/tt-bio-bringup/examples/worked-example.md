@@ -58,7 +58,11 @@ That changes how long each phase takes. It does not change the order of the phas
 # $SKILL is the skill directory: an install, or your clone. See 01-orientation.md, "Your first hour".
 export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
-test -f "$SKILL/SKILL.md" || SKILL=/path/to/your/clone/skills/tt-bio-bringup
+if ! test -f "$SKILL/SKILL.md"; then
+    echo "No install found. Point SKILL at your clone and re-run this block:"
+    echo "  export SKILL=~/tt-bio-bringup/skills/tt-bio-bringup"
+    return 2 2>/dev/null || exit 2
+fi
 
 mkdir -p notes scripts
 cp "$SKILL/templates/PORT_PLAN.md" notes/
@@ -269,18 +273,21 @@ distance is the module's envelope, and it replaces the Phase 0 guess. The recipe
 
 | Module | Envelope PCC | Maxdiff | Phase 0 guess | Gate becomes |
 |---|---|---|---|---|
-| `embed` | 1.000000 | 0.000e+00 | maxdiff 0 | maxdiff 0, the guess was right |
-| `blocks.0.norm1` | 1.000000 | 0.000e+00 | PCC >= 0.9999 | **maxdiff 0**, stronger than the guess |
+| `embed` | 1.0 (bit-equal) | 0.000e+00 | maxdiff 0 | maxdiff 0, the guess was right |
+| `blocks.0.norm1` | 1.0 (bit-equal) | 0.000e+00 | PCC >= 0.9999 | **maxdiff 0**, stronger than the guess |
 | `blocks.0.attn` | 0.999988 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.999988 |
 | `blocks.0.ffn` | 0.999991 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.999991 |
-| `blocks.0` | 1.000000 | 5.029e-03 | PCC >= 0.999 | maxdiff <= 5.0e-03 |
+| `blocks.0` | 0.99999988 | 5.029e-03 | PCC >= 0.999 | maxdiff <= 6.0e-03 |
 | `head.proj` | 0.999996 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.999996 |
 | `head.out` | 0.999992 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.999992 |
 | `<root>` | 0.999985 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.999985 |
 
-Read the second row. The guess was PCC >= 0.9999 and the truth is that a LayerNorm is **bf16-exact
-here**: its envelope is maxdiff 0, so the gate should be bit-equality and a PCC threshold would let a
-real regression through. Every guess in the Phase 0 table was too loose, which is the direction
+Read the second row and the fifth. `blocks.0.norm1` is **bf16-exact**: `torch.equal` is True, so its
+gate is bit-equality and the guessed `PCC >= 0.9999` would have let a real regression through.
+`blocks.0` looks identical if you read the PCC column rounded, and is not: its true PCC is
+0.99999988 and its maxdiff is 5.029e-03. **Decide bf16-exactness with `torch.equal`, never with a
+printed PCC**, and when the gate is a maxdiff, round the bar up from the envelope, or the next run's
+last bit fails it. Every guess in the Phase 0 table was too loose, which is the direction
 guesses go. A module whose bf16 self-error is 4e-3 cannot be held to 1e-4 no matter how good the
 port is, and holding it to 1e-2 passes a real bug.
 
@@ -335,7 +342,7 @@ model against the whole reference.
 | `blocks.0.norm1` | maxdiff 0 | 0 | 0 | no fix needed |
 | `blocks.0.ffn` | PCC >= 0.999991 | 0.9962 | 0.999993 | GELU: reference used exact, ttnn defaulted to tanh |
 | `blocks.0.attn` | PCC >= 0.999988 | 0.712 | 0.999990 | mask orientation, transposed |
-| `blocks.0` | maxdiff <= 5.0e-03 | 3.1e-03 | 3.1e-03 | no fix needed |
+| `blocks.0` | maxdiff <= 6.0e-03 | 3.1e-03 | 3.1e-03 | no fix needed |
 | `head.proj` | PCC >= 0.999996 | 0.999997 | 0.999997 | no fix needed |
 | `head.out` | PCC >= 0.999992 | 0.999994 | 0.999994 | no fix needed |
 | `MiniFold` | PCC >= 0.999985 | 0.999987 | 0.999987 | no fix needed |

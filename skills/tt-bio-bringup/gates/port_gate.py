@@ -34,15 +34,19 @@ from pathlib import Path
 sys.stdout.reconfigure(line_buffering=True)   # keep our labels interleaved with children's output
 
 PLACEHOLDER = re.compile(r"<[a-z][a-z0-9 _/.\-]*>", re.I)
+#: Literal angle-bracket names the reference documents require, not slots to fill.
+LITERAL_ANGLE = {"<root>"}
 #: Prose words inside angle brackets mean it is a sentence, not an unfilled template slot.
 NOT_A_PLACEHOLDER = re.compile(r"\b(and|or|not|if|then|is|in|to|of|the)\b", re.I)
-DEFERRED = re.compile(
-    r"\b(TBD|TODO|FIXME|XXX"
-    r"|figure (this |it )?out( later)?|decide later|to be decided|coming soon"
-    r"|we will (decide|pick|choose|look|figure|work|measure|find)"
-    r"|(will|to) be (decided|determined|measured|chosen|picked)"
-    r"|pick one (in|during|at) |whatever .{0,30}turns out"
+DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon"
+                           r"|to be (decided|determined|measured|chosen|picked))\b", re.I)
+#: Softer phrasings. Only a hole when they are the *value* of something: in a prose paragraph
+#: "we will measure the exact boundary in Phase 2" is a plan, and SKILL.md instructs it.
+DEFERRED_SOFT = re.compile(
+    r"\b(figure (this |it )?out( later)?|decide later"
+    r"|we will (decide|pick|choose|look|figure|work)"
     r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
+    r"|pick one (in|during|at) |whatever .{0,30}turns out"
     r"|seems right|good enough for now|not sure yet|no idea"
     r")\b", re.I)
 #: A cell that says nothing. "lots", "some", "a few": not a value.
@@ -59,7 +63,8 @@ GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
                        r"|[\w.-]+/[\w.-]+/[\w./-]+"
                        r"|\bnone needed\b", re.I)
 #: A path-shaped answer that is really a shrug. "n/a" reads as a directory to a loose regex.
-GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+|tbd/.*|todo/.*)$", re.I)
+GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+|tbd/.*|todo/.*"
+                           r"|to/be/[a-z]+|[a-z]+/to/[a-z]+)$", re.I)
 #: Columns whose whole purpose is to record that something failed on purpose.
 MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
 #: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
@@ -149,10 +154,12 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
     for n, line in enumerate(prose.splitlines(), 1):
         bare = strip_inline_code(line)
         for m in PLACEHOLDER.finditer(bare):
+            if m.group(0).lower() in LITERAL_ANGLE:
+                continue                       # a mandated key, e.g. the fixture's <root>
             if NOT_A_PLACEHOLDER.search(m.group(0)):
                 continue                       # prose in angle brackets, not a template slot
             problems.append(f"{path}:{n}: unfilled placeholder {m.group(0)!r}")
-        m = DEFERRED.search(bare)
+        m = DEFERRED_HARD.search(line) or DEFERRED_SOFT.search(bare)
         if m:
             problems.append(f"{path}:{n}: deferred entry {m.group(0)!r}, so this is not finished")
 
@@ -189,6 +196,9 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 # have not run yet is the thing the column exists to make visible.
                 if v and NOT_YET.fullmatch(v) and not MUST_BE_YES.search(col):
                     continue                       # an explicit "nothing here yet" is an answer
+                if v and DEFERRED_SOFT.search(v):
+                    problems.append(f"{path}:{n}: {col!r} says {v!r}, which defers the answer "
+                                    "rather than giving it")
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" column answered "no" is the finding, not a filled cell.
@@ -271,7 +281,12 @@ def gate_plan(args) -> int:
                 problems.append(
                     f"{path}:{n}: module {mod!r} names its golden as {golden!r}, which is not a "
                     "fixture. Name the file the test will load, or say 'none needed' and why.")
-            if thresh and not THRESHOLD_OK.search(thresh):
+            if thresh and re.match(r"^(see|per|as (in|per)|cf\.?)\b", thresh, re.I):
+                problems.append(
+                    f"{path}:{n}: module {mod!r} has threshold {thresh!r}, which is a pointer, not "
+                    "a threshold. Write the number here; the test loads this column, not that "
+                    "document.")
+            elif thresh and not THRESHOLD_OK.search(thresh):
                 problems.append(
                     f"{path}:{n}: module {mod!r} has threshold {thresh!r}, which has no number in "
                     "it. A threshold is a number, or a named exactness criterion like 'maxdiff 0'.")

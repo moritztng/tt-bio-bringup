@@ -288,7 +288,14 @@ with torch.autocast("cpu", dtype=torch.bfloat16):
     ref16 = mod(*args, **kwargs)
 
 envelope = pcc(ref16.float(), ref32)     # how far bf16 alone moves this module
+maxdiff  = (ref16.float() - ref32).abs().max().item()
+exact    = torch.equal(ref16.float(), ref32)      # the only honest test for "bf16-exact"
+print(f"{name:24s} pcc={envelope:.10f} maxdiff={maxdiff:.3e} exact={exact}")
 ```
+
+Print all three. A PCC rounded to six places reads `1.000000` at a maxdiff of 5e-3, which is the
+`02` §3.2 lesson ("a single scalar hides a localized catastrophe") applied to the instrument you are
+using to set every threshold in the port.
 
 Load the reference with the **weights the capture used**, not a fresh instantiation: different
 weights give a PCC near zero that reads as a catastrophic numerical failure and is two different
@@ -296,7 +303,13 @@ models. `envelope` is then the module's threshold, not a band you chose. A modul
 at 0.9993 cannot be held to 0.9999 by any port, and holding it to 0.99 passes a real bug. Record the
 measured value in the plan's Parity threshold column, replacing the guess, and record the fp32
 reference value beside it so the next reader can tell a tightening from a typo. Two cases to expect:
-a module that comes back at exactly 1.0 is bf16-exact and its gate is maxdiff 0, not a PCC; a module
+a module is bf16-exact when `torch.equal(ref16.float(), ref32)` is **True**, and only then is its
+gate maxdiff 0 rather than a PCC. Do **not** read that off the PCC. In the worked example
+`blocks.0` prints `1.000000` at six places and its true PCC is 0.9999998807907104 with a maxdiff of
+**5.029e-03**, nowhere near bit-equal. Setting that module's gate to maxdiff 0 gives you a bar the
+reference's own bf16 recompute misses, and you will spend a day hunting a port bug that is the bar.
+Print `torch.equal` beside the PCC, and when the gate is a maxdiff, **round the bar up** from the
+measured envelope: a bar at exactly the envelope fails on the next run's last bit. A module
 whose envelope is worse than the band in `03-precision-and-numerics.md` §7 is telling you the module
 is numerically fragile before you have written a line of device code, which is worth knowing in
 Phase 1 rather than Phase 3.
@@ -447,12 +460,18 @@ and the extrapolation predicts the end-to-end miss.
 
 ```python
 d = (tt_out - torch_out).flatten(); nz = d[d != 0]
-one_sided = max((nz > 0).float().mean(), (nz < 0).float().mean()).item()
+frac_pos  = (nz > 0).float().mean().item()      # 0.0 all negative, 0.5 symmetric, 1.0 all positive
+one_sided = abs(frac_pos - 0.5) * 2             # 0.0 symmetric, 1.0 fully one-sided
 ```
 
-Near 1.0 is a compounding bias worth fixing. Near 0.5 is symmetric rounding noise, and "fixing" it redraws a
-random walk: a bf16 `sigmoid` at 46.2% one-sidedness was made bit-identical to torch per op and was a measured
-**end-to-end regression**, reproduced twice. Mismatch *rate* does not predict payoff; one-sidedness does.
+Report `frac_pos`, and derive one-sidedness from it. Do **not** write
+`max((nz > 0).mean(), (nz < 0).mean())`: over non-zero elements those two fractions sum to 1, so that
+expression is >= 0.5 by construction and can never show you a symmetric residual.
+
+Near 0 or 1 in `frac_pos` is a compounding bias worth fixing. Near 0.5 is symmetric rounding noise, and
+"fixing" it redraws a random walk: a bf16 `sigmoid` at `frac_pos` **0.462**, one-sidedness 0.08, was made
+bit-identical to torch per op and was a measured **end-to-end regression**, reproduced twice. Mismatch
+*rate* does not predict payoff; one-sidedness does.
 
 **Instrument 3, in-chain substitution, and its limit.** Swapping one op class for its host-torch twin in the live
 chain **bounds** attribution, it does not **decompose** it: substitution also removes whatever error cancellation

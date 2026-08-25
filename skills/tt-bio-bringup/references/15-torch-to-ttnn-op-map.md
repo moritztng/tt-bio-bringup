@@ -12,11 +12,11 @@ The table below is a starting point and it will age. `ttnn` is the authority, an
 directly:
 
 ```bash
-./env/bin/python3 -c "import ttnn; print(hasattr(ttnn, 'silu'))"
+TT_VISIBLE_DEVICES= ./env/bin/python3 -c "import ttnn; print(hasattr(ttnn, 'silu'))"
 TT_VISIBLE_DEVICES= ./env/bin/python3 -c "import ttnn; print([a for a in dir(ttnn) if 'norm' in a])"
 ```
 
-Pin `TT_VISIBLE_DEVICES` empty for the second one. Importing `ttnn` unpinned on a host with cards
+Pin `TT_VISIBLE_DEVICES` empty for both. Importing `ttnn` unpinned on a host with cards
 brings up every card it can see, which takes them from whoever else is using them. Empty means
 "deliberately no device", and the import still gives you the full symbol table.
 

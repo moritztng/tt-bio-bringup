@@ -5,10 +5,16 @@ This is the capture protocol from `references/02-parity-and-correctness.md` §1.
 toy reference model, so you can watch the Phase 1 gate go green and red before you have any
 device code. It needs torch and nothing else. No Tenstorrent card, no ttnn.
 
-    python3 "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts
+`$REF_PY` is whatever interpreter can import your reference; here that is tt-bio's env, because
+this toy needs only torch. `$SKILL` must be exported, not just assigned: port_gate runs `--run`
+through `bash -c`, which inherits exported variables only.
 
-    python3 "$SKILL/gates/port_gate.py" determinism \
-        --run 'python3 "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts' \
+    export SKILL=... REF_PY=./env/bin/python3
+
+    "$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts
+
+    "$REF_PY" "$SKILL/gates/port_gate.py" determinism \
+        --run '"$REF_PY" "$SKILL/examples/minifold_capture.py" --len 117 --out /tmp/artifacts' \
         --artifact /tmp/artifacts/minifold_117.pt
 
 Then break it, and watch the gate catch it: pass --unpinned to skip the seeding, and the two
