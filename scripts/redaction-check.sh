@@ -11,6 +11,16 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
+# Every pattern below is PCRE (lookahead exclusions). A grep without -P does not narrow the
+# scan, it empties it: each invocation exits 2, the hit list is empty, and this script prints
+# "clean" having matched nothing. Refuse instead of reporting a green it did not measure.
+if ! echo x | grep -qP 'x(?!y)' 2>/dev/null; then
+  echo "FATAL: this grep has no -P (PCRE). Every pattern here needs it, and without it this"
+  echo "script would report clean while scanning nothing. Install GNU grep (macOS: brew install"
+  echo "grep, then use ggrep) and re-run." >&2
+  exit 2
+fi
+
 FILES=$(git ls-files -co --exclude-standard 2>/dev/null || find . -type f -not -path './.git/*')
 [ -z "$FILES" ] && { echo "no files to scan"; exit 2; }
 
