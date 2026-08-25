@@ -307,7 +307,9 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")
-    # A table is content too: Randomness is legitimately a table and no prose.
+    # A table is content too: Randomness is legitimately a table and no prose. An HTML comment
+    # is not: "<!-- deliberately left blank -->" is a blank section wearing a note.
+    stripped = re.sub(r"<!--.*?-->", "", stripped, flags=re.S)
     content = [l for l in stripped.splitlines()
                if l.strip() and not l.startswith("#")
                and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
