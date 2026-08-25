@@ -116,7 +116,16 @@ class Table:
 
 
 def _cells(line: str) -> list[str]:
-    return [c.strip() for c in line.strip().strip("|").split("|")]
+    r"""Split a row into cells the way a renderer does.
+
+    ``\|`` is a literal pipe inside a cell, not a separator. Splitting on every ``|`` shifted
+    every cell after the escape one place left, so the gate read a different column from the one
+    a reader sees: a verdict of "no" slid out of the Went red? column and the row passed.
+    """
+    body = line.strip()
+    body = re.sub(r"^\|", "", body)
+    body = re.sub(r"(?<!\\)\|$", "", body)
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", body)]
 
 
 def _is_separator(line: str) -> bool:
@@ -143,6 +152,13 @@ def parse_tables(text: str) -> list[Table]:
             t = Table(i + 1, _cells(lines[i]))
             i += 2
             while i < len(lines) and _is_row(lines[i]) and not _is_separator(lines[i]):
+                if i + 1 < len(lines) and _is_separator(lines[i + 1]):
+                    # A row followed by a separator is the header of a NEW table, not a data row
+                    # of this one. Without this break the second header was eaten as a row, its
+                    # separator stopped the loop, and every row after it belonged to no table at
+                    # all: a second verdict table appended directly under the first was read by
+                    # nobody, and a 'no' in it passed the gate.
+                    break
                 t.rows.append((i + 1, _cells(lines[i])))
                 i += 1
             tables.append(t)
@@ -253,6 +269,13 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 missing = t.header[len(row):]
                 problems.append(f"{path}:{n}: row stops after {len(row)} of {len(t.header)} "
                                 f"columns, so {', '.join(missing)!r} is absent rather than empty")
+            elif len(row) > len(t.header):
+                # A renderer drops the surplus, so a value parked there is invisible on the page
+                # and invisible to a reviewer, while still sitting in the file.
+                problems.append(f"{path}:{n}: row has {len(row)} cells against {len(t.header)} "
+                                f"columns. The extra {', '.join(row[len(t.header):])!r} is "
+                                "dropped when this renders, so nobody reading the document sees "
+                                "it. Escape a literal pipe as \\| .")
             blank = [t.header[i] if i < len(t.header) else f"col{i + 1}"
                      for i, c in enumerate(row) if not c]
             if blank:

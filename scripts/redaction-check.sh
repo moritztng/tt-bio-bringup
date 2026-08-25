@@ -60,11 +60,16 @@ PATTERNS=(
   'aws key|\bAKIA[0-9A-Z]{16}\b'
   'slack/telegram token|xox[abprs]-[A-Za-z0-9-]{10,}|bot[0-9]{8,}:[A-Za-z0-9_-]{30,}'
   'assigned secret|(api[_-]?key|secret|password|passwd|auth[_-]?token|access[_-]?token)[[:space:]]*[:=][[:space:]]*["'"'"'`]?[^[:space:]"'"'"'`]{8,}'
+  # The assigned form above needs 8+ characters after the '=', so it reads "API_KEY=xyz" as a
+  # placeholder and stays quiet. The word itself is what the brief names, and it appears nowhere
+  # in this repo, so match it bare and let a human judge the hit.
+  'the words api key|api[_-]?key'
+  'personal messaging|\btelegram\b|\bwhatsapp\b|\bsignal\.me\b'
   'private ipv4|\b(10|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'tailnet ipv4|\b100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'mac address|\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b'
   'home path|/home/[a-z][a-z0-9_-]*|/Users/[a-z][a-z0-9_-]*'
-  'agent or private state dir|\.claude/(?!skills|agents|plugins)|\.ssh/|\.aws/|\.gnupg/|\.kube/|\.netrc|/dev/tenstorrent/[0-9]+[[:space:]]*#'
+  'agent or private state dir|\.claude/(?!skills|agents|plugins)|\.config/|\.env\b|\.ssh/|\.aws/|\.gnupg/|\.kube/|\.netrc|/dev/tenstorrent/[0-9]+[[:space:]]*#'
   'internal host|\.(local|lan|internal|intranet|corp|home|localdomain)\b|\bbmc\b|\bilo\b|\bidrac\b'
   'private ipv6|\bfd[0-9a-f]{2}:[0-9a-f:]{2,}|\bfe80::[0-9a-f:]{2,}'
   'webhook url|hooks\.slack\.com/|discord\.com/api/webhooks/|\.webhook\.office\.com/'
@@ -81,6 +86,10 @@ if [ -f "$LOCAL" ]; then
     # Only a '#' preceded by whitespace is a comment. Stripping at the first '#' anywhere
     # silently truncated "bldg#3|projectzeus" to "bldg", and the "loaded 1 pattern" line then
     # asserted a pattern that was not the one written.
+    # A whole-line comment is a comment. Only a '#' with whitespace before it ends a pattern;
+    # stripping at any '#' truncated "bldg#3|projectzeus" to "bldg" while the summary said
+    # otherwise, and not stripping a leading '#' loaded the comment itself as a pattern.
+    printf '%s' "$line" | grep -q '^[[:space:]]*#' && continue
     line=$(printf '%s' "$line" | sed -e 's/[[:space:]]\+#.*$//' -e 's/[[:space:]]*$//')
     [ -z "$line" ] && continue
     # Validate it. An invalid PCRE makes grep error on every file, the error goes to /dev/null,
@@ -110,18 +119,35 @@ for entry in "${PATTERNS[@]}"; do
   # key on the same line as the repo's own URL read clean. The scanner's own file is still
   # skipped by name, which is a whole-file exemption and deliberate.
   # Contents, and then the PATHS. A path is published exactly as the bytes inside the file are,
-  # and scanning only contents meant "notes/rack3-alice-a@b.com.md" shipped and read clean: the
-  # email, host and home-path patterns would all have fired one byte to the right.
-  hits=$( { grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
-              | xargs -0 grep -anPi -- "$rx" 2>/dev/null
+  # and scanning only contents meant "notes/rack3-alice-a@b.com.md" shipped and read clean.
+  #
+  # The allowlist is applied to each file's text BEFORE matching, one file at a time. The earlier
+  # shape matched first and re-applied the pattern to grep's own "path:line:" output, which meant
+  # any pattern anchored at ^ could never survive the second pass: "^rack[0-9]" loaded, validated,
+  # was counted in the summary, and could not fire. Blanking first removes the second pass.
+  hits=$( { while IFS= read -r -d "" f; do
+              case $f in ./scripts/redaction-check.sh|scripts/redaction-check.sh) continue;; esac
+              if [ ! -r "$f" ]; then
+                printf 'UNREADABLE: %s\n' "$f"; continue
+              fi
+              sed -e 's|github\.com/moritztng|ALLOWED|gI' \
+                  -e 's|git@github\.com|ALLOWED|gI' \
+                  -e 's|example\.com|ALLOWED|gI' -- "$f" 2>/dev/null \
+                | grep -anPi -- "$rx" 2>/dev/null | sed "s|^|$f:|"
+            done < "$FILELIST"
             grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
-              | tr '\0' '\n' | grep -aPi -- "$rx" | sed 's|^|FILENAME: |'
-          } \
-    | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
-          -e 's|git@github\.com|ALLOWED|gI' \
-          -e 's|example\.com|ALLOWED|gI' \
-    | grep -aPi -- "$rx" \
-    | tr -d '\000' | cut -c1-200 )
+              | tr '\0' '\n' \
+              | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
+                    -e 's|git@github\.com|ALLOWED|gI' \
+                    -e 's|example\.com|ALLOWED|gI' \
+              | grep -aPi -- "$rx" | sed 's|^|FILENAME: |'
+          } | tr -d '\000' | cut -c1-200 )
+  unreadable=$(printf '%s\n' "$hits" | grep -a '^UNREADABLE: ' | sort -u)
+  if [ -n "$unreadable" ]; then
+    echo "FATAL: cannot read these files, so they were counted and not scanned:" >&2
+    printf '%s\n' "$unreadable" | sed 's/^/  /' >&2
+    exit 2
+  fi
   if [ -n "$hits" ]; then
     echo "REDACTION HIT [$label]"
     printf '%s\n' "$hits" | head -20 | sed 's/^/  /'

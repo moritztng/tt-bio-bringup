@@ -135,17 +135,27 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
       report "$TMP/state.md" --no-tables --require-heading "Environment" \
       --require-heading "Decisions taken"
 
-# 1c. Every table the example shows under a heading a gate judges, not only the nine this script
-#     extracts by key. A different table under ## Negative controls was invisible to all of the
-#     checks above: they pull tables the script names, and the gate never saw the rest.
+# 1c. EVERY table the example shows under a heading a gate judges, not only the nine this script
+#     extracts by key. Both halves are collected by position, not by a header string: a second
+#     table under either heading was invisible to all of the checks above, because they pull
+#     tables the script names and the gate never saw the rest. Naming one more header key would
+#     have fixed one planted table and missed the next one.
 {
     echo "# Parity report: minifold"
     echo; echo "## Component parity"; echo
-    need_table "Threshold (measured bf16 envelope)"
+    # From the Phase 3 heading to the Negative controls paragraph.
+    awk '
+        /^```/ { fence = !fence; next }
+        fence { next }
+        /^### Phase 3: component parity/ { on = 1; next }
+        on && /^\*\*Negative controls\*\*/ { exit }
+        on && /^#/ { exit }
+        on && /\|/ && !/^ *#/ { print }
+    ' "$EX"
     echo; echo "## Negative controls"; echo
-    # Every table row from the Negative controls paragraph until the next heading. Stopping at a
-    # blank line would collect only the first table, which is how a planted second one stayed
-    # invisible: the point of this block is that it does not choose.
+    # And from that paragraph to the next heading. Stopping at a blank line would collect only
+    # the first table, which is how a planted second one stayed invisible: the point of this
+    # block is that it does not choose.
     awk '
         /^```/ { fence = !fence; next }
         fence { next }
@@ -154,7 +164,7 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
         on && /\|/ && !/^ *#/ { print }
     ' "$EX"
 } > "$TMP/parity_all.md"
-check "every table the example puts under Negative controls" 0 "$TMP/parity_all.md" \
+check "every table the example puts under a heading Phase 3 judges" 0 "$TMP/parity_all.md" \
       report "$TMP/parity_all.md" --require-heading "Component parity" \
       --require-heading "Negative controls"
 
