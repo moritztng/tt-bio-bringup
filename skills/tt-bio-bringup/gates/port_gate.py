@@ -700,7 +700,17 @@ def gate_prove_red(args) -> int:
         return 2
 
     was = _fingerprint(watched)
-    check_paths = [q for q in _paths_in(args.check) if q not in {str(Path(w)) for w in watched}]
+    # Compare resolved paths. "--expect-change /tmp/x/f.py" with "--check 'cd /tmp/x && grep f.py'"
+    # is one file named two ways, and comparing the strings refused a completely ordinary
+    # invocation as though the break had touched something undeclared.
+    def _real(q: str) -> str:
+        try:
+            return str(Path(q).resolve())
+        except OSError:
+            return str(Path(q))
+
+    watched_real = {_real(w) for w in watched}
+    check_paths = [q for q in _paths_in(args.check) if _real(q) not in watched_real]
     check_before = _fingerprint(check_paths)
     def _bail(msg: str) -> int:
         """Refuse, but put the tree back first. Three of these used to return without running
