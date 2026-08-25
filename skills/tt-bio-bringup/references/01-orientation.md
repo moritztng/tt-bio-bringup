@@ -135,7 +135,7 @@ a card, and it is the wrong one to pin with. Full treatment in
 **4. Run the existing suite, before you change anything.**
 
 ```bash
-TT_VISIBLE_DEVICES=0 python3 -m pytest tests -q          # pick a card that -ls listed
+TT_VISIBLE_DEVICES=0 ./env/bin/python3 -m pytest tests -q          # pick a card that -ls listed
 ```
 
 `TT_VISIBLE_DEVICES` is mandatory on a host with cards. Unpinned, pytest refuses the session on

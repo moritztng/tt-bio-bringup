@@ -532,7 +532,10 @@ cleanup path will wedge a healthy card.
 **Check.** Reset the chip, then verify with a *fast* canary script. A slow script cannot
 distinguish "recovered" from "wedged again" in reasonable time.
 **Fix.** `tt-smi -r <chip>`.
-**Guard.** Prefer SIGTERM over SIGKILL for a process stuck host-side, but use `timeout -s INT`
+**Guard.** SIGINT first, always: `ttnn.close_device` is an `atexit` hook and neither SIGTERM nor
+SIGKILL runs it, so both can leave the chip dirty
+(`09-devices-and-hardware-operations.md` §6). SIGTERM is only for a process you have already
+confirmed is host-deadlocked with the device idle. Use `timeout -s INT`
 (SIGINT) for any bounded run of a process that might hang *inside* a device call: SIGTERM on a
 device-hung process has itself wedged cards.
 

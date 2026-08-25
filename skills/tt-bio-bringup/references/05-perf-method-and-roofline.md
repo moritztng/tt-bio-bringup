@@ -162,7 +162,7 @@ and idle inside it. Two independent signals agreeing is what makes the call trus
 `min(compute, AI * bandwidth)`. And check the denominator of every derived rate. One "the write runs
 at 102 % of the write roof" had a correctly measured roof and a bad denominator: bytes written
 divided by the *gap between two arm timings* (93.7 µs) when the writer kernel was active 153.5 µs.
-Corrected, 59 % of roof.
+Corrected, `1.02 x 93.7 / 153.5` = **62 % of roof**.
 
 ## 5. Amdahl discipline: bound the lever before you build it
 

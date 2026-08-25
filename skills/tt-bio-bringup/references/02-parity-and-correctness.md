@@ -267,7 +267,10 @@ all-atom PCC from 1.0 to 0.5 while every valid atom is perfect.
 
 `PCC_max ≈ sigma_R / sqrt(sigma_R**2 + RMSE**2)`. For a target whose true signal is small, a bf16 port cannot
 clear a flat bar shared with higher-signal siblings. One cell measured 0.8926 against a flat 0.9 bar with a
-predicted ceiling of 0.908: **1.5 points below its own ceiling**, so the 0.9 bar was unreachable by any port. Before calling a PCC failure a
+predicted ceiling of 0.908: the cell is **1.5 points below its own ceiling**, and that ceiling is only
+0.8 points above the shared bar. A cell with that little headroom fails the bar on ordinary bf16
+noise while a higher-signal sibling with the same port quality sails past, so the *bar* is the defect,
+not the port. Before calling a PCC failure a
 regression, check the reference is deterministic across reruns and compute the ceiling. If measured sits at it,
 re-baseline that cell with the derivation inline and keep an MAE bar as the real guard, since MAE is not
 SNR-distorted.
@@ -347,7 +350,8 @@ device accumulates in fp32. Use it as a ceiling and say in the plan that you did
 
 **A replay needs a tolerance even in fp32.** Running a submodule standalone does not reproduce its
 in-graph result bit for bit, because the surrounding graph changes the summation order. On the
-worked example nine of forty-one modules differ by ~9e-08 in pure fp32, all of them attention. Do
+worked example **four** of forty-one modules differ in pure fp32, 8.9e-08 to 1.2e-07, and all four
+are the attention blocks. Do
 not write the replay test as `torch.equal`.
 
 **When is `maxdiff 0` the right gate?** Only when the recipe returned a **bfloat16** output and

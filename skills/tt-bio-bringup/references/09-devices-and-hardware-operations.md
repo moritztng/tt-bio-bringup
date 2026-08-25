@@ -24,7 +24,7 @@ live mapping per host; there is no formula worth memorising.
 
 ```python
 # ttmap.py: which kernel node does this logical id actually open? Run once per candidate id:
-#   for v in 0 1 2 3; do TT_VISIBLE_DEVICES=$v python3 ttmap.py; done
+#   for v in 0 1 2 3; do TT_VISIBLE_DEVICES=$v ./env/bin/python3 ttmap.py; done
 import os, ttnn
 ttnn.open_device(device_id=0)   # logical 0 *within* the pinned set
 fds = (os.readlink(f"/proc/self/fd/{f}") for f in os.listdir("/proc/self/fd"))

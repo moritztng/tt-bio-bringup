@@ -172,9 +172,11 @@ function. Concrete shapes that have dominated real models:
 - **Recompute of step-invariant work inside the loop.** A section that is >25 % of per-step cost
   but whose inputs do not include the step variable is a hoist, not a kernel problem: precomputing
   per-block conditioning biases once took a diffusion step 364 → 113 ms.
-- **Host featurisation outside the model entirely.** On one model, 12.7 s of a 22.0 s fold was host
-  featurisation re-run per fold with no cache. A large host cost that sits on both arms of a
-  comparison pulls any ratio toward 1 and flatters whichever side is slower.
+- **Host featurisation outside the model entirely.** On one model a large fraction of a 22.0 s fold
+  was host featurisation, re-run per fold with no cache. A cost that sits on both arms of a
+  comparison pulls any ratio toward 1 and flatters whichever side is slower. Recover it from the two
+  ratios rather than timing it by eye: `05-perf-method-and-roofline.md` §9 gives the formula and
+  works it out at 4.07 s for that fold.
 
 Because dispatch is CPU-bound host work, **host load contaminates dispatch-heavy arms selectively**.
 A trace-on/trace-off comparison on a loaded machine read 10.1 s vs 22.4 s, a fake −55 % win; with

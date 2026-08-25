@@ -61,13 +61,12 @@ export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
 if ! test -f "$SKILL/SKILL.md"; then
     echo "No install found. Point SKILL at your clone and re-run this block:"
     echo "  export SKILL=~/tt-bio-bringup/skills/tt-bio-bringup"
-    return 2 2>/dev/null || exit 2
+else
+    mkdir -p notes scripts
+    cp "$SKILL/templates/PORT_PLAN.md" "$SKILL/templates/PORT_STATE.md" notes/
+    cp "$SKILL/gates/port_gate.py" scripts/
+    python3 scripts/port_gate.py plan notes/PORT_PLAN.md
 fi
-
-mkdir -p notes scripts
-cp "$SKILL/templates/PORT_PLAN.md" notes/
-cp "$SKILL/gates/port_gate.py" scripts/
-python3 scripts/port_gate.py plan notes/PORT_PLAN.md
 ```
 
 The template starts red, and it names every hole:
@@ -338,10 +337,13 @@ LayerNorm misses by 1.3e-02. **Check the output dtype before you believe the num
 rows are measured with the explicit bf16 cast instead, which rounds the accumulation too and is
 therefore an upper bound; the plan records that it is.
 
-**PCC in float64, not float32.** `blocks.0` at fp32 accumulation prints `1.0000000`, which is
-`1 - 2^-23` rounding to one, next to a maxdiff of 2.2e-02. The correlation of a residual that small
-against a signal that large is genuinely 0.99999500, and you cannot see the difference between
-"0.999995" and "1.0" in fp32. The `pcc()` above accumulates in double for that reason.
+**PCC in float64, not float32.** Take `blocks.0` under autocast, before the explicit cast: maxdiff
+5.029e-03, and `torch.corrcoef` in fp32 returns **0.9999998808**, which is `1 - 2^-23`, the fp32
+neighbour of 1.0. In float64 the same pair is **0.9999995169**. The fp32 answer is not the
+correlation, it is the nearest float32 to it, and rounded for display it reads as a perfect score
+next to a residual of 5e-3. The explicit-cast row is far enough from 1.0 that fp32 holds it
+(0.9999951720 against 0.9999949972 in double), which is exactly why you cannot tell from one row
+whether the accumulation width matters. Use `pcc()` above, which accumulates in double.
 
 The five rows autocast did cast tell the ordinary story: every Phase 0 guess was too loose, by about
 an order of magnitude each. The bars above are rounded down from the measured envelope for a PCC and
@@ -475,7 +477,9 @@ firing at another, every time, and timing is too noisy to notice a path that qui
 
 ### Phase 5: performance
 
-Census first, roofs second, prediction third, build fourth. *Every number illustrative.*
+Census first, roofs second, prediction third, build fourth. *Every number below is illustrative,
+with one exception, marked:* the three roofs are real measurements from `05` §3, because a census
+whose "off the roof" column has no roof behind it is a list of times.
 
 Roofs first, because every "off the roof" figure below is relative to them and a census without them
 is a list of times. Measure them once per card, never quote a datasheet:
@@ -486,8 +490,10 @@ is a list of times. Measure them once per card, never quote a datasheet:
 | DRAM bandwidth | 8192² bf16 `ttnn.add`, 402.7 MB/call | 435.2 GB/s |
 | Machine balance | 100.6e12 / 435.2e9 | 231 FLOP/byte |
 
-Those three come from `05-perf-method-and-roofline.md` §3, measured on a Blackhole p150a. Yours will
-differ; run the harness rather than copying them.
+Those three are **the exception to this section's illustrative-numbers rule**: they are measured, on
+a Blackhole p150a, and they are quoted from `05-perf-method-and-roofline.md` §3. Yours will differ.
+Run the harness rather than copying them, and treat every other figure below as made up for the
+example.
 
 | Op | Calls | Device time | Share of device | Share of wall | Bound by |
 |---|---|---|---|---|---|

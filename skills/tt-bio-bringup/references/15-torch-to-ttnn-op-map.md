@@ -134,13 +134,16 @@ class Count(torch.overrides.TorchFunctionMode):
         return func(*args, **(kwargs or {}))
 
 with Count() as c, torch.no_grad():
-    model(example_input)
+    model(**example_input)          # pass the model's real inputs, mask included: an optional
+                                    # mask that you omit here silently drops the masking ops from
+                                    # the census, and those are the ones with no ttnn equivalent
 for name, n in c.n.most_common():
     if name not in NOT_AN_OP:
         print(f"{n:6d}  {name}")
 ```
 
-On the worked example's toy model at L=64 that prints `linear 10`, `add 9`, `layer_norm 8`,
+On the worked example's toy model at L=64, called as
+`example_input = {"tokens": ..., "mask": ...}`, that prints `linear 10`, `add 9`, `layer_norm 8`,
 `transpose 8`, `zeros_like 4`, `masked_fill_ 4`, `multi_head_attention_forward 4`, `gelu 4`,
 `dropout 4`, `unsqueeze 2`, `embedding 1`. Two things to notice, and both will happen to you:
 `multi_head_attention_forward` is one composite entry hiding the projections and the softmax inside
