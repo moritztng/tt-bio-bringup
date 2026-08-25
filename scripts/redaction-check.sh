@@ -2,7 +2,7 @@
 # Fails if anything in this repository looks like private information.
 # This repo is public. Run before every push. Exit 0 = clean, exit 1 = a hit to review.
 #
-# Prove it works before you trust it: plant a fake secret in a NEW, UNTRACKED file, run this,
+# Prove it works before you trust it: plant a fake credential in a NEW, UNTRACKED file, run this,
 # confirm exit 1, remove it, confirm exit 0. A check nobody has seen go red is not a check.
 #
 # The canary must be untracked, because that is the state a file is in right before `git add`,
@@ -11,7 +11,7 @@
 set -u
 # Byte semantics everywhere. In a UTF-8 locale PCRE gives up on a line containing an invalid byte,
 # and sed does too, so a path or a line holding one was silently not matched while the summary
-# counted it: "we\xffird-a@b.com.md" scanned clean beside an identically shaped valid name that hit.
+# counted it: "we\xffird-NAME-at-DOMAIN.md" scanned clean beside an identically shaped valid name that hit.
 LC_ALL=C
 export LC_ALL
 # Resolve the script's own directory to an absolute path BEFORE the cd. Both are derived from
@@ -113,7 +113,11 @@ PATTERNS=(
 LOCAL="$SELFDIR/redaction-local.txt"
 if [ -f "$LOCAL" ]; then
   n=0
-  while IFS= read -r line; do
+  # `|| [ -n "$line" ]`: read returns non-zero on a final line with no newline, so the loop body
+  # never ran for it. Writing this file with `cat > ...` and Ctrl-D without a final Enter dropped
+  # the last pattern, and the run printed "clean". The local denylist is the only arm that scans
+  # for the org's own hostnames and staff names, so losing one of them loses the whole point.
+  while IFS= read -r line || [ -n "$line" ]; do
     # Only a '#' preceded by whitespace is a comment. Stripping at the first '#' anywhere
     # silently truncated "bldg#3|projectzeus" to "bldg", and the "loaded 1 pattern" line then
     # asserted a pattern that was not the one written.
@@ -154,27 +158,30 @@ for entry in "${PATTERNS[@]}"; do
   # key on the same line as the repo's own URL read clean. The scanner's own file is still
   # skipped by name, which is a whole-file exemption and deliberate.
   # Contents, and then the PATHS. A path is published exactly as the bytes inside the file are,
-  # and scanning only contents meant "notes/rack3-alice-a@b.com.md" shipped and read clean.
+  # and scanning only contents meant "notes/rack3-alice-NAME-at-DOMAIN.md" shipped and read clean.
   #
   # The allowlist is applied to each file's text BEFORE matching, one file at a time. The earlier
   # shape matched first and re-applied the pattern to grep's own "path:line:" output, which meant
   # any pattern anchored at ^ could never survive the second pass: "^rack[0-9]" loaded, validated,
   # was counted in the summary, and could not fire. Blanking first removes the second pass.
   hits=$( { while IFS= read -r -d "" f; do
-              # This file holds the patterns, so scanning it against them is all false positives.
-              # It is still a published file, and a hostname typed into it shipped unseen. So it
-              # is exempt from the BUILT-IN patterns only: the local denylist, which is the org's
-              # own hostnames and staff names, is applied to it like any other file.
+              # This file holds the patterns, so scanning the pattern list against itself is all
+              # false positives. Everything else in it is ordinary published text, and a credential
+              # typed into the comments or the code shipped unseen: this is the one file a reader
+              # is told to edit. So the exemption is now the PATTERNS=( ... ) region only, cut out
+              # of the stream, and the rest of the file is scanned like any other.
+              cut=cat
               case $f in
                 ./scripts/redaction-check.sh|scripts/redaction-check.sh)
-                  [ "$label" = "local denylist" ] || continue ;;
+                  cut="sed /^PATTERNS=($/,/^)$/d" ;;
               esac
               if [ ! -r "$f" ]; then
                 printf 'UNREADABLE: %s\n' "$f"; continue
               fi
-              sed -e 's|github\.com/moritztng|ALLOWED|gI' \
-                  -e 's|git@github\.com|ALLOWED|gI' \
-                  -e 's|example\.com|ALLOWED|gI' -- "$f" 2>/dev/null \
+              $cut -- "$f" 2>/dev/null \
+                | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
+                      -e 's|git@github\.com|ALLOWED|gI' \
+                      -e 's|example\.com|ALLOWED|gI' \
                 | grep -anPi -- "$rx" 2>/dev/null | f="$f" awk '{ print ENVIRON["f"] ":" $0 }'
             done < "$FILELIST"
             grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \

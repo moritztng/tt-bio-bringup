@@ -128,8 +128,14 @@ VERDICT_WORD_OK = re.compile(
 #: Zero means "no difference" for these and nothing of the kind for pcc, a seed or a step index.
 DIFFERENCE_METRIC = {"maxdiff", "diff", "delta", "rmsd", "mae", "abs", "rel", "tol", "atol",
                      "rtol", "exit", "code"}
-#: One means "the two sides agree" for these.
-AGREEMENT_METRIC = {"pcc"}
+#: One means "the two sides agree" for these, and zero means they have nothing in common.
+AGREEMENT_METRIC = {"pcc", "corr", "cosine"}
+#: A zero after one of these is an ordinal, not a measurement.
+INDEX_WORD = {"seed", "seeds", "step", "steps", "row", "rows", "run", "runs", "case", "cases",
+              "test", "tests", "commit", "block", "layer", "index", "idx"}
+
+
+
 #: A test id, a path or a symbol. Naming the test that went red is detail worth having, and an
 #: identifier is distinguishable from prose: it carries an underscore, a separator or a file
 #: extension, which "injected", "skipped" and "needed" do not.
@@ -156,21 +162,33 @@ def verdict_problem(cell: str) -> str | None:
         return ("does not start with an affirmative. This column records that the test FAILED "
                 "when you broke it, so it has to start with yes, red, true or confirmed.")
     rest = AFFIRMATIVE.sub("", cell, count=1)
-    nums: list[tuple[str | None, float]] = []
+    # Tokens are validated across the whole cell; VALUES are judged only on the segment after the
+    # last transition marker. "yes, pcc 1.0 -> 0.31" is the most informative verdict a numeric
+    # control can give, and the left side of an honest one is always the agreeing value: a
+    # bit-exact golden starts at maxdiff 0, a matched module at pcc 1.0, a passing test at exit 0.
+    # Judging every number in the cell condemned exactly those, telling the author their proof was
+    # the thing it disproves.
+    tail = re.split(r"->|\u2192|\bto\b", rest)[-1]
+    carried = None
+    for w in re.findall(r"[A-Za-z_]+", rest[:len(rest) - len(tail)]):
+        if w.lower() in DIFFERENCE_METRIC or w.lower() in AGREEMENT_METRIC:
+            carried = w.lower()
+    tail_start = len(rest) - len(tail)
+    nums: list[tuple[str | None, float, int]] = []
     prev: str | None = None
-    for tok in re.split(r"[\s,;:()\[\]/]+|->|\u2192", rest):
-        tok = tok.strip(".!\u2013\u2014")
+    for m in re.finditer(r"[^\s,;:()\[\]/]+", re.sub(r"->|\u2192", " ", rest)):
+        tok = m.group(0).strip(".!\u2013\u2014")
         if not tok:
             continue
         # Classify before measuring. Scanning the whole cell for digits read the 0 out of
         # `blocks.0.ffn` and called the verdict a zero.
         if VERDICT_NUM_OK.match(tok):
             try:
-                nums.append((prev, float(tok.rstrip("%"))))
+                nums.append((prev, float(tok.rstrip("%")), m.start()))
             except ValueError:
                 try:
                     # 0x0 is a zero. Swallowing the parse failure let it through the rule below.
-                    nums.append((prev, float(int(tok, 0))))
+                    nums.append((prev, float(int(tok, 0)), m.start()))
                 except ValueError:
                     pass
             prev = tok
@@ -195,16 +213,23 @@ def verdict_problem(cell: str) -> str | None:
     # difference". A blanket zero rule condemned "yes, pcc 0.0", which is MAXIMAL divergence and
     # the loudest possible red, and "yes, red at seed 0", where the 0 is an index. Which it is
     # depends on the word in front of it.
-    for prev, n in nums:
+    tailnums = [(p, n) for p, n, at in nums if at >= tail_start] or [(p, n) for p, n, _ in nums[-1:]]
+    for prev, n in tailnums:
+        # `carried` is the metric named before the arrow. In "pcc 0.99 -> 1.0" the token directly
+        # before 1.0 is 0.99, not a metric, so without the fallback the value after the transition
+        # was judged with no idea what it measured.
         word = (prev or "").lower()
-        if n == 0.0 and word in DIFFERENCE_METRIC:
-            return (f"says {word} is zero, which is the two sides agreeing: the injected fault "
-                    "changed nothing. Record the value the broken run actually produced.")
-        if n == 0.0 and prev is None and len(nums) == 1:
-            return ("is an affirmative and a bare zero, which names no movement at all. Say what "
-                    "the broken run produced, or leave the number out.")
+        if word not in DIFFERENCE_METRIC and word not in AGREEMENT_METRIC and word not in INDEX_WORD:
+            word = carried or word
+        # Zero is the control not firing everywhere EXCEPT as a PCC (where 0 is total divergence,
+        # the loudest red there is) and as an index (seed 0, step 0, row 0). Anything else --
+        # "maxdiff 0", "exit code 0", "0 of 3 runs", "fail 0", a bare 0 -- says nothing moved.
+        if n == 0.0 and word not in AGREEMENT_METRIC and word not in INDEX_WORD:
+            return ("names a zero as the value the broken run produced. A zero difference, a zero "
+                    "exit code and a zero count all say the injected fault changed nothing. If "
+                    "the zero is an index, put the word in front of it (seed 0, step 0, row 0).")
         if n == 1.0 and word in AGREEMENT_METRIC:
-            return (f"says {word} is 1, which is the two sides agreeing, and that is what a "
+            return (f"ends at {word} 1, which is the two sides agreeing, and that is what a "
                     "control that did not fire looks like. Record the value the broken run "
                     "produced.")
     g, r = GREENISH.search(rest), REDDISH.search(rest)

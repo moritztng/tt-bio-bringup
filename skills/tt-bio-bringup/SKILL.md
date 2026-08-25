@@ -486,10 +486,11 @@ Constraints when you do fan out:
 - Agents push branches. One owner merges, and verifies the merge against `git log`, not against the
   agent's report.
 
-The `agents/` directory holds ready-made subagent definitions for four working roles
-(`parity-porter`, `perf-analyst`, `kernel-author`, `gate-auditor`) and one audit role,
-`cold-reader`, which does not do the work but reads your own documents and briefs back to you as a
-newcomer would. Run the cold reader on your `notes/PORT_PLAN.md` before you hand any of it out.
+The `agents/` directory holds ready-made subagent definitions for three working roles
+(`parity-porter`, `perf-analyst`, `kernel-author`) and two that audit: `gate-auditor`, which reads
+a gate and asks what it would let through, and `cold-reader`, which does not do the work but reads
+your own documents and briefs back to you as a newcomer would. Run the cold reader on your
+`notes/PORT_PLAN.md` before you hand any of it out.
 
 `agents/` is **not** under `$SKILL`. It sits beside `skills/` in the repository, so the plugin
 install picks it up automatically and the symlink install does not; that is why the README's symlink
