@@ -2,12 +2,16 @@
 # Fails if anything in this repository looks like private information.
 # This repo is public. Run before every push. Exit 0 = clean, exit 1 = a hit to review.
 #
-# Prove it works before you trust it: plant a fake secret in a file, run this, confirm exit 1,
-# remove it, confirm exit 0. A check nobody has seen go red is not a check.
+# Prove it works before you trust it: plant a fake secret in a NEW, UNTRACKED file, run this,
+# confirm exit 1, remove it, confirm exit 0. A check nobody has seen go red is not a check.
+#
+# The canary must be untracked, because that is the state a file is in right before `git add`,
+# and it is the case this script got wrong once: `git ls-files` alone lists tracked files only,
+# so the scan silently narrowed to the index and reported clean while seeing nothing new.
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
-FILES=$(git ls-files 2>/dev/null || find . -type f -not -path './.git/*')
+FILES=$(git ls-files -co --exclude-standard 2>/dev/null || find . -type f -not -path './.git/*')
 [ -z "$FILES" ] && { echo "no files to scan"; exit 2; }
 
 # Each entry: <label>|<extended regex>. Case-insensitive unless the pattern needs case.

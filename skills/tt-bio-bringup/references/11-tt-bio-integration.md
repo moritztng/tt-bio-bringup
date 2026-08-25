@@ -201,8 +201,7 @@ Before you write any helper, grep for it. These already exist:
 |---|---|---|
 | open/close a device, hold a lease | `get_device()`, `cleanup()` | `tt_bio/tenstorrent.py`, `tt_bio/device_lease.py` |
 | host weight to device tensor, linear, head split/merge | `Module.torch_to_tt`, `_lin`, `_split_heads`, `_merge_heads` | `tt_bio/tenstorrent.py` |
-| navigate a nested checkpoint | `WeightScope` | `tt_bio/tenstorrent.py` |
-| the standard core grid | `CORE_GRID_MAIN` | `tt_bio/tenstorrent.py` |
+| navigate a nested checkpoint, standard core grid | `WeightScope`, `CORE_GRID_MAIN` | `tt_bio/tenstorrent.py` |
 | tile size, token-axis padding, masking, slicing back | `TILE`, `bucket_multiple`, `pad_amount`, `bucketed_width`, `token_pad_masks_tt`, `TOKEN_AXIS` | `tt_bio/token_axis.py` |
 | chunk a big op to an L1 budget | the existing chunk-size resolvers | `tt_bio/tenstorrent.py` |
 | fused SDPA, softmax, matmul, reblocking | `sdpa_generic.py`, `softmax_generic.py`, `mm_generic.py`, `reblock_permute.py` | `tt_bio/` |
@@ -211,8 +210,7 @@ Before you write any helper, grep for it. These already exist:
 | read a boolean env var | `env_flag` | `tt_bio/envflags.py` |
 | checkpoint download, cache, intactness | `resolve`, `fetch`, `status` | `tt_bio/weights.py` |
 | job discovery, host thread caps, device enumeration | `discover_jobs`, `host_thread_cap`, `detect_tenstorrent_devices` | `tt_bio/runtime.py` |
-| write a structure and its metrics | the shared writer | `tt_bio/data/write.py`, `main.py::write_result` |
-| per-stage progress events | the shared progress reporter | `tt_bio/progress.py` |
+| write a structure and its metrics, report progress | the shared writer and reporter | `tt_bio/data/write.py`, `main.py::write_result`, `tt_bio/progress.py` |
 
 Custom kernel sources go under `tt_bio/kernels/<name>/`, loaded at runtime by file path
 (`KERNEL_DIR`, ttnn `KernelDescriptor` `FILE_PATH`), with `compute/` and `dataflow/` subdirectories
@@ -222,9 +220,8 @@ when the kernel has both. A new kernel directory is a packaging event: see secti
 
 Name files `tests/test_yourmodel_<component>.py` and pytest finds them (`testpaths = ["tests"]`).
 Import shared test helpers as `from conftest import ...`, and load a `scripts/<port>/*.py` harness
-through `tests/_port_module.py::port_module("yourmodel_port", "parity_gate")` rather than
-`sys.path.insert` plus a bare import, because four ports ship a file called `parity_gate.py` and a
-bare import resolves by collection order.
+through `tests/_port_module.py::port_module("yourmodel_port", "parity_gate")`, not `sys.path.insert`
+plus a bare import: four ports ship a `parity_gate.py` and a bare import resolves by collection order.
 
 **Device marker.** Any test that opens a card gets `@pytest.mark.device`. The conftest resolves four
 states: no card node present, skip. `TT_VISIBLE_DEVICES` set but empty, skip (a declared CPU-only
@@ -262,16 +259,15 @@ end-to-end metric against ground truth with target name and length, the referenc
 spread (device results are compared against that, not against zero), which variants are *not* gated
 and why, and a "Reproduce" section whose commands run today. State a verdict line.
 
-**`docs/yourmodel-perf.md`** or an entry in the existing perf write-up records measured numbers with
-the **exact command** that produced them: model, input file and its size, recycling and sampling
-settings, card type, warm or cold, median of how many repeats. Then add your model to
-`docs/perf_baselines.json` and to `scripts/perf_regression.py`, which measures warm steady-state
-throughput on a small fixed input, excludes model load and first-kernel compile, and fails against a
-committed per-card-type baseline. `tests/test_perf_model_coverage.py` fails if a shipped `--model`
-is neither perf-gated nor explicitly exempted with a reason, so skipping this is caught, not silent.
-
-Also update the README `--model` table (one row folded in, not a parallel prose section) and the
-CHANGELOG. See `05-perf-method-and-roofline.md` for how to produce a number worth writing down.
+**`docs/yourmodel-perf.md`** records measured numbers with the **exact command** that produced them:
+model, input file and its size, recycling and sampling settings, card type, warm or cold, median of
+how many repeats. Then add the model to `docs/perf_baselines.json` and `scripts/perf_regression.py`,
+which measures warm steady-state throughput on a small fixed input, excludes model load and
+first-kernel compile, and fails against a committed per-card-type baseline.
+`tests/test_perf_model_coverage.py` fails if a shipped `--model` is neither perf-gated nor explicitly
+exempted with a reason, so skipping this is caught, not silent. Also update the README `--model`
+table (one row folded in, not a parallel prose section) and the CHANGELOG. See
+`05-perf-method-and-roofline.md` for how to produce a number worth writing down.
 
 ## 9. Packaging
 
@@ -286,8 +282,9 @@ zero signal until the first eligible call on a clean `pip install`.
 "tt_bio.yourmodel.resources" = ["*.yaml"]
 ```
 
-```
-# MANIFEST.in  (sdist; belt and braces so both artifacts are independent of setuptools behaviour)
+```text
+# MANIFEST.in, for the sdist. Belt and braces, so both artifacts are independent of
+# whatever setuptools decides to include on its own.
 recursive-include tt_bio/kernels *.cpp *.hpp
 recursive-include tt_bio/_vendor LICENSE
 include tt_bio/yourmodel/resources/*.yaml
@@ -298,26 +295,22 @@ three separate times, once losing 22 files across a set of new kernel directorie
 source extension appears, extend the extension list; do not re-add a per-directory path.
 
 `scripts/packaging_smoke.py` is the only guard that catches this class: it builds the real wheel and
-sdist and asserts every non-`.py` file tracked under `tt_bio/` ships in both and survives a clean
-`pip install --no-deps --target`. A normal pytest run against the source tree never catches it, the
-files are still on disk in editable mode. Card-free and fast, so run it before every tag; `--fold`
-goes further and runs real inference from the installed wheel.
+sdist, and asserts every non-`.py` file tracked under `tt_bio/` ships in both and survives a clean
+`pip install --no-deps --target`. A pytest run against the source tree never catches it, the files
+are still on disk in editable mode. Card-free and fast, so run it before every tag.
 
 ## 10. Dependencies
 
 **Vendor the small host-side reference** into `tt_bio/_vendor/yourmodel/`: featurization, structure
-assembly, and the reference model files. Rewrite absolute imports to the vendored namespace, keep
-per-file provenance headers, ship the upstream LICENSE inside the vendored directory, and add a
-NOTICE entry. No runtime `git clone`, no sibling checkout, no `sys.path` shim, no `MODEL_SRC` env var.
+assembly, reference model files. Rewrite absolute imports to the vendored namespace, keep per-file
+provenance headers, ship the upstream LICENSE inside the vendored directory, add a NOTICE entry. No
+runtime `git clone`, no sibling checkout, no `sys.path` shim, no `MODEL_SRC` env var.
 
 **Declare every import as a real dependency**, including ones that feel transitive. The failure is
 not an import error on your module: your module imports fine and the fold dies deep in featurization
 instead. Build a venv from `pyproject.toml` alone and fold one target; it surfaces them one package
-at a time.
-
-**Pin with a written reason.** Every upper bound in the dependency list should carry a comment naming
-the API that broke and the versions verified clean. A bound with no reason gets lifted by the next
-person and the failure returns.
+at a time. Every upper bound carries a comment naming the API that broke and the versions verified
+clean, because a bound with no reason gets lifted by the next person and the failure returns.
 
 **A dependency major bump is release-gated, because it can move accuracy.** Numerical libraries,
 chemistry toolkits and model frameworks change default algorithms across majors. Before bumping, run
@@ -332,16 +325,15 @@ not evidence, the tests may not be sensitive to the thing that moved.
   1 GB capture directory and a stray editor file enter the history in one commit.
 - **Before proposing a merge, look at *where* the files landed**, not just whether tests pass:
   `git status` and `git diff --stat <upstream>/main`. A port's diff should touch `tt_bio/yourmodel*`,
-  the shared modules it genuinely changed, `tests/test_yourmodel_*`, `docs/`, nothing else. Anything
-  in the repo root, in another task's directory, or in `scripts/` that is not a real tool is a mistake.
+  the shared modules it genuinely changed, `tests/test_yourmodel_*` and `docs/`, nothing else.
 - **A per-directory `.gitignore` is not inherited by siblings.** Three sibling campaign directories
   each carried their own ignore rule; the fourth did not, and a normal commit landed 783 MB of `.npy`
   undetected until an unrelated run tripped the repo-size guard. Write the rule once at the family
   level (`perf/family/**/*.npy`), not once per leaf.
-- **Watch out for ignore rules that swallow real code.** A generic output-cache rule such as `msa/`
-  will hide a vendored package directory of the same name, and the symptom is a `ModuleNotFoundError`
-  on a clean checkout, long after the commit. Re-include explicitly (`!tt_bio/_vendor/**/msa/**`) and
-  verify with `git status --ignored` after vendoring.
+- **Watch for ignore rules that swallow real code.** A generic output-cache rule such as `msa/` hides
+  a vendored package directory of the same name, and the symptom is a `ModuleNotFoundError` on a
+  clean checkout long after the commit. Re-include explicitly (`!tt_bio/_vendor/**/msa/**`) and check
+  `git status --ignored` after vendoring.
 - **Planning documents, status updates and task notes stay out of the code repo.** The repo is the
   product; it is what someone clones.
 - **Rebase on upstream in small steps.** A fork that skips six upstream releases and then merges once
