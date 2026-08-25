@@ -293,6 +293,22 @@ def gate_report(args) -> int:
         print(f"GATE 2: {path} does not exist.")
         return 2
     problems = check_document(path, args.require_heading or [], require_tables=not args.no_tables)
+
+    # A required heading with nothing under it used to pass, because the table check only asked
+    # whether the document contained a table *somewhere*. So a perf report with Measured roofs,
+    # Op census and Levers all empty, plus one unrelated table, read GATE 0. Every section named
+    # on the command line is named because its rows are the evidence.
+    text = path.read_text(encoding="utf-8", errors="replace")
+    for want in args.require_heading or []:
+        body = _section(text, want)
+        if body is None:
+            continue                              # already reported as a missing heading
+        filled = [tb for tb in parse_tables(strip_code_blocks(body)) if tb.rows]
+        if not filled:
+            problems.append(
+                f"{path}: {want!r} has no table with data rows under it. The heading is not the "
+                "evidence; the rows are. If this section is genuinely empty, say why in it and "
+                "drop it from --require-heading.")
     return _verdict("report", path, problems)
 
 

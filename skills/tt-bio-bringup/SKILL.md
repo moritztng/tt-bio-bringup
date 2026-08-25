@@ -229,8 +229,10 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_p
     --require-heading "Component parity" --require-heading "Negative controls"
 ```
 
-The report arm is why the parity template has a negative-controls table: it fails if any row is
-blank, so "I broke it and it went red" has to have actually happened for every test.
+The report arm is why the parity template has a negative-controls table. It checks four things and
+you should know which: the section exists, it holds a table with rows in it, no cell is blank, and
+no "Went red?" cell says `no`, `pass` or `passed`. What it cannot check is whether you actually ran
+the injection. `port_gate.py prove-red` is what makes that true; the table is where you record it.
 
 ### Phase 4 - Generality
 
@@ -272,7 +274,9 @@ tells you how to set your own):
 
 **Exit gate:** the performance document holds the census before and after, the measured roofs, every
 landed lever with its predicted and actual effect, every killed lever with the number that killed it,
-and a command that reproduces each figure.
+and a command that reproduces each figure. The gate below enforces the first four: each named section
+has to exist and carry a filled table. The reproducing command is on you, and it is the one a reader
+six months from now will actually need.
 
 ```bash
 ./env/bin/python3 scripts/port_gate.py report docs/yourmodel-perf.md \
