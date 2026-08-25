@@ -142,6 +142,24 @@ compare anything at all.
 | `nn.Dropout` | `torch.manual_seed(0)` then `eval()` | disabled on both sides; the capture asserts `training is False` |
 | weight init | `torch.manual_seed(1234)` before construction | the device side loads the reference state dict, it never re-inits |
 
+**The op inventory, counted rather than guessed.** These counts come from the `TorchFunctionMode`
+snippet in `15-torch-to-ttnn-op-map.md` §4, run on the model, and each ttnn name was resolved by
+`hasattr` rather than assumed. This is the one column of the plan that asks for a fact.
+
+| torch op | Count in model | ttnn equivalent | Risk |
+|---|---|---|---|
+| `linear` | 10 | `ttnn.linear` | none |
+| `add` | 9 | `ttnn.add` | broadcasting rules differ from torch |
+| `layer_norm` | 8 | `ttnn.layer_norm` | none |
+| `transpose` | 8 | `ttnn.transpose` | last-two-dims is the fast path, others re-tile |
+| `zeros_like` | 4 | `ttnn.zeros_like` | none |
+| `masked_fill_` | 4 | `ttnn.where`, or an additive mask | additive stays bit-exact under padding |
+| `multi_head_attention_forward` | 4 | `ttnn.transformer.scaled_dot_product_attention` | one composite hiding the projections and the softmax; mask convention |
+| `gelu` | 4 | `ttnn.gelu` | erf vs tanh approximation, see risk 2 |
+| `dropout` | 4 | none, and none needed | inference only; it appears here because the call happens under `eval()` and becomes the identity |
+| `unsqueeze` | 2 | `ttnn.unsqueeze` | none |
+| `embedding` | 1 | `ttnn.embedding` | none |
+
 **The risk register: the ops with no clean equivalent.** Three entries, and the first is the whole
 performance story of this model.
 
@@ -387,10 +405,13 @@ model against the whole reference.
 
 Every threshold in that column is the **measured** envelope from Phase 1, not the Phase 0 guess.
 That is the substitution the last section argued for, so this table has to be the one that does it:
-`blocks.0.norm1` is gated on `maxdiff 0` because Phase 1 measured it bf16-exact, and the Phase 0
-guess of `PCC >= 0.9999` would have let a real regression through. "no fix needed" in the last
-column is a deliberate phrase, not a blank: the gate rejects an empty cell, because an empty cell
-and a forgotten one look the same.
+`blocks.0.norm1` is gated on `maxdiff <= 1.4e-02`, which is the number Phase 1 measured with an
+explicit bf16 cast after autocast declined to cast it. It is emphatically **not** gated on
+`maxdiff 0`: the `exact=True` autocast reported for that module is the trap the previous section
+is about, and a correct device LayerNorm misses a zero bar by 1.3e-02. The Phase 0 guess of
+`PCC >= 0.9999` was wrong in the other direction, loose enough to pass a real regression. "no fix
+needed" in the last column is a deliberate phrase, not a blank: the gate rejects an empty cell,
+because an empty cell and a forgotten one look the same.
 
 Two things in that table are the actual lesson.
 

@@ -31,6 +31,19 @@ table() {
     ' "$EX"
 }
 
+# table() finding nothing looked exactly like table() finding an empty section, so a deleted
+# table in the example produced a plan the gate happily passed. Fail loudly instead.
+need_table() {
+    out=$(table "$1")
+    if [ -z "$out" ]; then
+        printf '  FAIL  no table in the example whose header contains %s\n' "$1" >&2
+        printf '        The extraction found nothing, which is not the same as finding an empty\n' >&2
+        printf '        table. Either the example lost it or this key no longer matches.\n' >&2
+        exit 1
+    fi
+    printf '%s\n' "$out"
+}
+
 fail=0
 check() {   # check <label> <expected-rc> <ignored> <gate args...>
     # $3 is a decoy kept so the call sites line up visually; the gate arguments start at $4.
@@ -60,17 +73,17 @@ check() {   # check <label> <expected-rc> <ignored> <gate args...>
     echo "- Input modes to support: token ids plus an optional boolean mask"
     echo "- Outputs to produce, in what formats: logits and single, as a .pt"
     echo; echo "## Module tree"; echo
-    table "Golden fixture"
+    need_table "Golden fixture"
     echo; echo "## Axes"; echo
-    table "Tile-multiple handling"
+    need_table "Tile-multiple handling"
     echo; echo "## Op inventory"; echo
-    table "ttnn equivalent"
+    need_table "ttnn equivalent"
     echo; echo "## Control flow"
     echo "One loop over 4 blocks, trip count fixed at 4, independent of the data."
     echo; echo "## Host-side pipelines"
     echo "Tokenization only: a 22-symbol vocabulary lookup and an optional padding mask."
     echo; echo "## Randomness"; echo
-    table "How both sides will share draws"
+    need_table "How both sides will share draws"
     echo; echo "## Evaluation set"; echo
     echo "| Item | Decision |"; echo "|---|---|"
     echo "| Inputs, named | 3 sequences at L = 64, 117 and 380 |"
@@ -100,9 +113,9 @@ check "Phase 0 report arm, from the example's own block" 0 "$TMP/state.md" \
 {
     echo "# Parity report: minifold"
     echo; echo "## Component parity"; echo
-    table "Threshold (measured bf16 envelope)"
+    need_table "Threshold (measured bf16 envelope)"
     echo; echo "## Negative controls"; echo
-    table "Went red?"
+    need_table "Went red?"
 } > "$TMP/parity.md"
 check "Phase 3 parity report, from the example's own tables" 0 "$TMP/parity.md" \
       report "$TMP/parity.md" --require-heading "Component parity" --require-heading "Negative controls"
@@ -111,11 +124,11 @@ check "Phase 3 parity report, from the example's own tables" 0 "$TMP/parity.md" 
 {
     echo "# Performance report: minifold"
     echo; echo "## Measured roofs"; echo
-    table "| Roof | Method | Value |"
+    need_table "| Roof | Method | Value |"
     echo; echo "## Op census"; echo
-    table "Share of wall"
+    need_table "Share of wall"
     echo; echo "## Levers"; echo
-    table "Share of wall it touches"
+    need_table "Share of wall it touches"
 } > "$TMP/perf.md"
 check "Phase 5 perf report, from the example's own tables" 0 "$TMP/perf.md" \
       report "$TMP/perf.md" --require-heading "Measured roofs" --require-heading "Op census" \
@@ -125,6 +138,12 @@ check "Phase 5 perf report, from the example's own tables" 0 "$TMP/perf.md" \
 check "blank plan template is red" 1 x plan skills/tt-bio-bringup/templates/PORT_PLAN.md
 check "blank parity template is red" 1 x report skills/tt-bio-bringup/templates/parity-report.md \
       --require-heading "Component parity" --require-heading "Negative controls"
+check "blank perf template is red" 1 x report skills/tt-bio-bringup/templates/perf-report.md \
+      --require-heading "Measured roofs" --require-heading "Op census" --require-heading "Levers"
+# The example's Environment block deliberately shortens two labels, so testing only the example
+# would not have caught an 80-character cap that exempted exactly the template's two long ones.
+check "blank PORT_STATE template is red" 1 x report skills/tt-bio-bringup/templates/PORT_STATE.md \
+      --no-tables --require-heading "Environment" --require-heading "Decisions taken"
 
 # 5. The example pastes the gate's own output for the blank template. That output carries line
 #    numbers, so every edit to the template invalidates it, and it has gone stale twice. Compare

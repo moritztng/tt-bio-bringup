@@ -150,6 +150,14 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
     prose = strip_code_blocks(text)
     problems: list[str] = []
 
+    # Hard deferral tokens are checked on the WHOLE file, fenced blocks included. Everything
+    # else reads `prose`, because an example inside a fence is not a hole; but a plan that
+    # parks "TODO, to be decided" in a code block has parked it all the same.
+    for n, line in enumerate(text.splitlines(), 1):
+        m = DEFERRED_HARD.search(line)
+        if m:
+            problems.append(f"{path}:{n}: deferred entry {m.group(0)!r}, so this is not finished")
+
     if not text.strip():
         return [f"{path} is empty."]
     if not any(l.startswith("#") for l in prose.splitlines()):
@@ -180,7 +188,7 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
             if NOT_A_PLACEHOLDER.search(m.group(0)):
                 continue                       # prose in angle brackets, not a template slot
             problems.append(f"{path}:{n}: unfilled placeholder {m.group(0)!r}")
-        m = DEFERRED_HARD.search(line) or DEFERRED_SOFT.search(bare)
+        m = DEFERRED_SOFT.search(bare)
         if m:
             problems.append(f"{path}:{n}: deferred entry {m.group(0)!r}, so this is not finished")
 
@@ -223,20 +231,20 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                     problems.append(f"{path}:{n}: {raw!r} under {col!r} is punctuation, not an "
                                     "answer. A cell that survives stripping as empty is empty.")
                     continue
+                # Which cell carries the verdict, decided before any escape hatch applies.
+                is_verdict = bool(MUST_BE_YES.search(col)) or (
+                    in_controls_section and i == len(t.header) - 1)
                 # "none yet" is an answer in most columns and never in this one: a control you
-                # have not run yet is the thing the column exists to make visible.
-                if v and NOT_YET.fullmatch(v) and not MUST_BE_YES.search(col):
+                # have not run yet is the thing the column exists to make visible. This has to be
+                # tested after is_verdict, or renaming the column re-opens the escape.
+                if v and NOT_YET.fullmatch(v) and not is_verdict:
                     continue                       # an explicit "nothing here yet" is an answer
                 if v and DEFERRED_SOFT.search(v):
                     problems.append(f"{path}:{n}: {col!r} says {v!r}, which defers the answer "
                                     "rather than giving it")
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
-                # A "did it go red?" column answered "no" is the finding, not a filled cell.
-                # Keyed on the column name OR on being the last column of a negative-controls
-                # table, because renaming the column used to disable this check entirely.
-                is_verdict = MUST_BE_YES.search(col) or (
-                    in_controls_section and i == len(t.header) - 1)
+                # A "did it go red?" cell answered "no" is the finding, not a filled cell.
                 if v and is_verdict and (
                         not AFFIRMATIVE.match(v) or negated(v)):
                     problems.append(
@@ -258,10 +266,15 @@ def _section(text: str, name: str) -> str | None:
         # section's own checks vanished silently. Two matchers for one name have to agree.
         stripped = line.strip()
         if stripped.startswith("#") and name.lower() in stripped.lstrip("#").strip().lower():
+            depth = len(stripped) - len(stripped.lstrip("#"))
             body = []
             for nxt in lines[i + 1:]:
-                if nxt.startswith("#" * line.count("#", 0, 6)) and nxt.lstrip("#").strip():
-                    if len(nxt) - len(nxt.lstrip("#")) <= line.count("#"):
+                s = nxt.strip()
+                if s.startswith("#") and s.lstrip("#").strip():
+                    # Any heading at this depth or shallower ends the section. Testing only
+                    # same-depth folded a following "# Appendix" into the body, so a table there
+                    # satisfied this section's checks.
+                    if len(s) - len(s.lstrip("#")) <= depth:
                         break
                 body.append(nxt)
             return "\n".join(body)
@@ -288,7 +301,9 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     problems = []
     stripped = strip_code_blocks(body)
     bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
-    empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]{1,80}:\s*$", l)]
+    # No length cap on the label. An 80-character cap exempted the two PORT_STATE bullets this
+    # check exists for, at 92 and 91 characters, and nothing said so.
+    empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]+:\s*$", l)]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")
@@ -312,9 +327,16 @@ def gate_plan(args) -> int:
     tables = parse_tables(text)
 
     # The module tree is the load-bearing table: no module without a named golden.
-    tree = next((t for t in tables
-                 if any("module" in h.lower() for h in t.header)
-                 and any("golden" in h.lower() for h in t.header)), None)
+    candidates = [t for t in tables
+                  if any("module" in h.lower() for h in t.header)
+                  and any("golden" in h.lower() for h in t.header)]
+    if len(candidates) > 1:
+        problems.append(
+            f"{path}: {len(candidates)} tables have both a Module and a Golden column, at lines "
+            f"{', '.join(str(c.line_no) for c in candidates)}. Only one of them can be the module "
+            "tree, and checking the first would let a small compliant table hide a large "
+            "unfinished one. Delete or rename the others.")
+    tree = candidates[0] if candidates else None
     if tree is None:
         problems.append(f"{path}: no module-tree table with both a Module and a Golden column. "
                         "Every module needs the golden that will prove it, named, in Phase 0.")
@@ -355,8 +377,7 @@ def gate_plan(args) -> int:
     # Four required sections are prose, not tables, and nothing checked them: the pinned
     # commit, the checkpoint hash, the CPU command and the nondeterminism note that Phase 1's
     # golden depends on. The gate printed "every section present" over four empty ones.
-    for name in ("Reference", "Target", "Control flow", "Host-side pipelines", "Randomness",
-                 "Risks"):
+    for name in PLAN_HEADINGS:            # all ten, not the six this used to name
         problems += check_section(path, text, name)
 
     target = _section(text, "target")
@@ -513,8 +534,24 @@ CANNOT_RUN = {
 }
 
 
+#: A check that only asks whether a path exists cannot be shown to detect a defect: the only
+#: fault it can see is the file going missing, which is not a defect in the file.
+EXISTENCE_ONLY = re.compile(
+    r"^\s*(?:test|\[\[?)\s+-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$", re.I)
+
+
 def gate_prove_red(args) -> int:
     watched = args.expect_change or []
+
+    if EXISTENCE_ONLY.match(args.check):
+        print(f"GATE 2: {args.check!r} only asks whether a path exists.")
+        print("  There is no fault you can inject into that file that it will notice, because the\n"
+              "  only thing it reads is the presence of the name. Breaking it means deleting the\n"
+              "  file, and a check that fails because its subject is gone has not been shown to\n"
+              "  detect anything. This is the existence-checked-contents-depended-on failure by\n"
+              "  construction: make the check read the contents, then prove that red.")
+        return 2
+
     if not watched and not args.no_expect_change:
         print("GATE 2: pass --expect-change <the file the break edits>.")
         print("  Without it this subcommand cannot tell a real injection from a break that did\n"
@@ -643,7 +680,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--restore", required=True, metavar="CMD")
     p.add_argument("--no-expect-change", action="store_true",
                    help="the break edits nothing on disk, so skip the did-it-change check. Use "
-                        "only when that is true; without it --expect-change is required.")
+                        "only when that is true; without it --expect-change is required. It does "
+                        "not exempt you from the existence-only-check refusal.")
     p.add_argument("--red-exit", type=int, metavar="N",
                    help="the exit code this check uses to report a defect, when it is not the "
                         "usual 1. Without it, an exit code that means 'could not run' (2-5, 126, "

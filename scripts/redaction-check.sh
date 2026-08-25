@@ -70,12 +70,18 @@ fail=0
 for entry in "${PATTERNS[@]}"; do
   label=${entry%%|*}
   rx=${entry#*|}
-  hits=$(printf '%s\n' "$FILES" | tr '\n' '\0' \
+  # Allowlisted strings are blanked out of each LINE before matching, not used to drop the line.
+  # Dropping the line meant a single github.com/moritztng URL anywhere on it suppressed every
+  # pattern for that line, and these documents tell the reader to write those URLs: a planted AWS
+  # key on the same line as the repo's own URL read clean. The scanner's own file is still
+  # skipped by name, which is a whole-file exemption and deliberate.
+  hits=$(printf '%s\n' "$FILES" | grep -v '^\(\./\)\?scripts/redaction-check\.sh$' \
+    | tr '\n' '\0' \
     | xargs -0 grep -anPi -- "$rx" 2>/dev/null \
-    | grep -avE '^(./)?scripts/redaction-check\.sh:' \
-    | grep -avi 'github\.com/moritztng' \
-    | grep -avi 'git@github\.com' \
-    | grep -avi 'example\.com' \
+    | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
+          -e 's|git@github\.com|ALLOWED|gI' \
+          -e 's|example\.com|ALLOWED|gI' \
+    | grep -aPi -- "$rx" \
     | tr -d '\000' | cut -c1-200 )
   if [ -n "$hits" ]; then
     echo "REDACTION HIT [$label]"
