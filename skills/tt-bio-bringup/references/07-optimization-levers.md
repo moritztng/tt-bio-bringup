@@ -13,18 +13,18 @@ to pick what to build next.
 
 | # | Lever | Precondition that makes it pay | Typical magnitude |
 |---|---|---|---|
-| 1 | Device residency across calls/iterations | any host round-trip inside a loop | 1.15x–12x |
-| 2 | Trace capture | host-dispatch-bound AND shape-stable loop | 1.0x–2.2x |
-| 3 | L1 residency / memory config | fits L1 *and* every consumer stays on-chip | 1.02x–2.2x on the op |
-| 4 | Op fusion | absorbing kernel is bandwidth-bound, not compute-bound | 1.06x–1.34x on the fold |
-| 5 | Sample/design-dim batching | device underutilized at your sequence length | 1.5x–5x throughput |
+| 1 | Device residency across calls/iterations | any host round-trip inside a loop | 1.15x-12x |
+| 2 | Trace capture | host-dispatch-bound AND shape-stable loop | 1.0x-2.2x |
+| 3 | L1 residency / memory config | fits L1 *and* every consumer stays on-chip | 1.02x-2.2x on the op |
+| 4 | Op fusion | absorbing kernel is bandwidth-bound, not compute-bound | 1.06x-1.34x on the fold |
+| 5 | Sample/design-dim batching | device underutilized at your sequence length | 1.5x-5x throughput |
 | 6 | Weight preprocessing + bf16 load | load is a visible share of wall clock | 2.6x on load |
-| 7 | Multi-device fanout | axis is independent samples/designs/targets | 1.8x–27x, sublinear |
-| 8 | Matmul program config | one named op is far off its measured roof | 1.02x–1.2x on the op |
+| 7 | Multi-device fanout | axis is independent samples/designs/targets | 1.8x-27.8x, sublinear |
+| 8 | Matmul program config | one named op is far off its measured roof | 1.02x-1.2x on the op |
 | 9 | Remove per-element ops | any scatter/gather/index op in a hot path | up to 58x on that op |
 | 10 | Bucketing | many distinct shapes, compile-bound | bounds a ~60 s cold cost |
 | 11 | Host-side work | host share > 5% of wall clock | varies |
-| 12 | Custom kernels | everything above exhausted, floor says room remains | 1.06x–1.34x, days of work |
+| 12 | Custom kernels | everything above exhausted, floor says room remains | 1.06x-1.34x, days of work |
 
 Magnitudes are whole-fold unless stated. **Never multiply two levers' headline numbers.** Levers measured from different
 baselines do not compose: individually-measured 5.07x and 4.77x arms landed at 4.37x when integrated. Measure one
@@ -49,7 +49,7 @@ kernel. Warm == cold for a loop means the cost is transfer, and residency remove
 
 **How to implement.** Two patterns, both in-tree. *Resident recurrence loop*: hoist the loop into a ttnn module
 (`TrunkRecycle` / `TrunkModule` style in `tt_bio/tenstorrent.py`), keep pair/single state as device tensors, mark
-inference-invariant submodules compute-once. Worth ~8–16% of a folding fold; on a design model whose trunk runs at ~100
+inference-invariant submodules compute-once. Worth ~8-16% of a folding fold; on a design model whose trunk runs at ~100
 residues it compounded to ~31% end-to-end because two pipeline stages share the loop. *Resident sampler context*: split
 conditioning into step-invariant `f(z_trunk, relpos)` (computed once, kept resident) and per-step (cheap,
 `t`-dependent), exposed as `prepare()` / `step()` / `release_cache()`. One diffusion head: 30.6 s → 2.5 s.
@@ -72,7 +72,7 @@ with zero host dispatch.
 *Economic*: dispatch is actually the cost, proven by a warm eager-vs-traced A/B. On a small-protein diffusion loop of
 many tiny atom-level matmuls, a score model went 38.4 → 26.7 ms/step partially traced, 17.1 ms/step whole-step.
 
-**How to predict the win.** Multiply the loop body's op count by ~17–20 µs of per-program dispatch, compare to measured
+**How to predict the win.** Multiply the loop body's op count by ~17-20 µs of per-program dispatch, compare to measured
 wall, then confirm the prediction with a warm eager-vs-traced A/B before writing any capture code. Both halves are
 load-bearing. A "91.5% host-dispatch-bound" headline for one folding trunk was a unit slip
 (`05-perf-method-and-roofline.md` §5 has the arithmetic); measured directly, that trunk was device-compute-bound and
@@ -155,19 +155,19 @@ request, not a today-lever.
 the prize if fusion deletes it") is correct only when the *absorbing* kernel is bandwidth-bound and has spare compute to
 hide the absorbed math behind. When the absorber is already compute-bound, the absorbed arithmetic gets *un-hidden* and
 runs in addition. In one candidate the absorber sat at 50% of its DRAM roof while the op sat at 88% of its: the fused
-arm's compute floor was 0.790–1.185 ms/call against a 0.612 ms/call gate and an 0.862 ms/call prize. NO-GO in four
+arm's compute floor was 0.790-1.185 ms/call against a 0.612 ms/call gate and an 0.862 ms/call prize. NO-GO in four
 minutes of microbenchmark instead of a week of kernel work. So: measure the absorber's roofline color first, then price
 the added arithmetic with a single on/off toggle of one in-DST SFPU pass already in a kernel (one sigmoid pass measured
 0.6630 ms/call, one integer-round pass 0.1976) rather than building a prototype.
 
 **How to implement.** Dump TTIR and TTNN IR, align by `loc(#locNNNN)`, enumerate candidate patterns with an instance
 count (the count decides whether it is worth fixing). For a new kernel, a shipped ttnn op's program factory transcribes
-into a Python `ProgramDescriptor` at 1.002–1.018x of native and bit-exact, so `ttnn.generic_op` ships kernels from the
+into a Python `ProgramDescriptor` at 1.002-1.018x of native and bit-exact, so `ttnn.generic_op` ships kernels from the
 production wheel with no tt-metal build.
 
 **How it fails.**
 - **Fusion into a transaction-bound kernel returns about two thirds of what it looks like it deletes.** One merged
-  kernel predicted ~4.876 ms/call recovered and delivered 63–73%; 1.32–1.79 ms/call reappeared because two page reads
+  kernel predicted ~4.876 ms/call recovered and delivered 63-73%; 1.32-1.79 ms/call reappeared because two page reads
   before one barrier expose roughly twice the reader latency. Price a ~1/3 comeback by default.
 - **A fusion's addressable size range is computable before you build it.** One fused softmax was bit-exact only where
   two independently derived blockings coincide, which was exactly 50% of engaged key widths. Enumerate that first and
@@ -188,7 +188,7 @@ confidence score and output digest.
 
 **When it pays.** When the device is underutilized at your sequence length, which for a bio model is most of the time
 below ~512 residues. Measured: best-of-5 folding 4.06 → 2.44 s warm, with B=4 costing about 1.20x of B=1. On a protein
-LM, 16 seq/s → 250 seq/s at batch 8 (~15x), saturating at batch 16–32 (batch 64 adds ~5%).
+LM, 16 seq/s → 250 seq/s at batch 8 (~15x), saturating at batch 16-32 (batch 64 adds ~5%).
 
 **How to predict the win.** Place the fold on the roofline (`05-perf-method-and-roofline.md`). Below N≈1024 in matmul terms you are
 measuring dispatch, not compute, and batching converts serial dispatch into one program: if the op count per sample is
@@ -206,7 +206,7 @@ grid-aware default (halve on smaller grids) and an env override. Leave the B=1 p
   bias-add, reduce softmax in place), not blocking the failing allocation. Count co-live tensors of the failing shape
   before building a blocking lever.
 - Batching is lossless for a deterministic encoder and lossy for a stochastic decoder: batched design slots can drift
-  0.5–2.8 Å from their unbatched selves, so each slot is a different design. A batched design counts as throughput only
+  0.5-2.8 Å from their unbatched selves, so each slot is a different design. A batched design counts as throughput only
   if each slot is an independent, production-valid output.
 - Best-of-N only helps when confidence is informative. On low-confidence targets the confidence score can be flat or
   anti-correlated with true error, and best-of-N picks a worse structure.
@@ -215,7 +215,7 @@ grid-aware default (halve on smaller grids) and an env override. Leave the B=1 p
 `(B, L_bucketed)` fixed, change the *content* of the other rows, assert the row's output is bit-exact (Δ=0). That
 separates shape-driven accumulation reordering (fine) from contamination (a bug). Batching is also the lever that most
 often closes a gap against a GPU baseline, and conversely a batch-1-only comparison is not a throughput comparison: on
-design models a GPU gains 1.79–5.2x from batching where the TT card gains ~1.04x. Use matched batch on both sides, or
+design models a GPU gains 1.79-5.2x from batching where the TT card gains ~1.04x. Use matched batch on both sides, or
 state which batch you used.
 
 ## 6. Weight preprocessing
@@ -289,12 +289,12 @@ the honest denominator, not the spec sheet.
 **How to predict the win.** Compute arithmetic intensity and compare to machine balance (231 FLOP/byte at HiFi4). Below
 that you cannot be compute-bound and no block-shape or fidelity knob helps: go back to lever 3 or 4. One ttnn pathology
 worth checking: `k_tiles_per_core = div_up(k_tiles, num_cores)` collapses to 1 for any matmul with `k_tiles <
-num_cores`, which on a ~110–130-core grid is *every* dense projection in a Pairformer-style trunk at `c_z=256` (8
+num_cores`, which on a ~110-130-core grid is *every* dense projection in a Pairformer-style trunk at `c_z=256` (8
 K-tiles).
 
 **How it fails.**
 - **At production sizes the library matmul usually wins, and a hand-written one is a last resort.** Head to head,
-  `ttnn.matmul` hit 48.9 TFLOP/s at N=1024 against 3.2–3.9 for a custom kernel lacking L1 reuse and multicast blocking,
+  `ttnn.matmul` hit 48.9 TFLOP/s at N=1024 against 3.2-3.9 for a custom kernel lacking L1 reuse and multicast blocking,
   and reached 98.7% of the compute roof once fed from L1. Swapping the custom op into a real fold made it *slower* (105
   s vs 86 s). Its micro-benchmark "15x" was against a whole ttnn module at tiny N, not against `ttnn.matmul` at
   production N.
@@ -318,7 +318,7 @@ limited**. On a 45.1M-element tensor: `ttnn.add` 0.649 ms (69.5 G elem/s), `ttnn
 slower), `ttnn.scatter_add` 9.65 ms (14.9x), `ttnn.gather` 38.0 ms (1.2 G elem/s, **58x**). Proof it is element rate: a
 `bfloat8_b` tensor at half the bytes cost 4.662 ms, 0.1% different.
 
-**How to predict the win.** Count elements traversed, not bytes moved, and price at ~10–14 cycles/element. At larger
+**How to predict the win.** Count elements traversed, not bytes moved, and price at ~10-14 cycles/element. At larger
 scales it is worse than linear: one `ttnn.gather` cost the *product* of the gathered dimension and the output count.
 
 **How to implement.** Restructure the indirection away.
@@ -341,7 +341,7 @@ treatment in `04-shapes-tiles-and-bucketing.md` §5; this is the ranking summary
 
 **When it pays.** When per-shape JIT compile dominates: ~0.85 s per new shape for a small LM, tens of seconds for a
 folding trunk. Compiles are disk-cached (`~/.cache/tt-metal-cache`), so it is one-time per shape per machine; an
-in-process program cache removes a further ~8–10 s/shape. Bucketing bounds the distinct-shape count so the cache
+in-process program cache removes a further ~8-10 s/shape. Bucketing bounds the distinct-shape count so the cache
 saturates after one run. Predict by counting distinct lifetime shapes times per-shape compile, against the padded work
 you pay on every input forever.
 
@@ -367,7 +367,7 @@ what is heavy. Some things stay on host permanently: exact SVD for Kabsch alignm
 alternative loses accuracy.
 
 **When it pays.** Once device work has shrunk. A per-card lead over a GPU can be *entirely* host and dispatch: in one
-comparison a TT card's 23.240 s beat a GPU's 30.813 s wall, but the GPU's own utilization trace showed 19.78–19.84 s
+comparison a TT card's 23.240 s beat a GPU's 30.813 s wall, but the GPU's own utilization trace showed 19.78-19.84 s
 device-busy, so the GPU was ~1.17x faster on device seconds and the lead was their dispatch bubble plus 2.08 s of host
 featurization our port did in 0.069 s. Name the mechanism or the claim reads as a silicon claim it cannot support.
 
@@ -385,10 +385,10 @@ inline code.
 ## 12. Custom kernels
 
 Last lever, covered in `10-custom-kernels.md`. Preconditions: every lever above measured and either landed or explicitly
-NO-GO; a floor derived from measured roofs; the predicted landing written down *before* building. Expect 1.06x–1.34x on
+NO-GO; a floor derived from measured roofs; the predicted landing written down *before* building. Expect 1.06x-1.34x on
 the fold for days of work, and note that the analysis which kills a megakernel often produces a smaller kernel worth 84%
 of it in one day. Two structural facts make it cheaper than it sounds: a shipped ttnn op's program factory transcribes
-into a Python `ProgramDescriptor` at 1.002–1.018x of native and bit-exact, so `ttnn.generic_op` deploys kernels from the
+into a Python `ProgramDescriptor` at 1.002-1.018x of native and bit-exact, so `ttnn.generic_op` deploys kernels from the
 production wheel with no tt-metal build; and any custom kernel calling `ttnn.split_work_to_cores` inherits its
 unsatisfiable-split holes (it throws whenever `units > cores` and `units % cores` is a non-zero multiple of the grid
 height, 358 of the first 4000 unit counts on a 13x10 grid), so plan a sub-grid search and a safe decline to the stock
@@ -404,16 +404,16 @@ Order matters because each step changes what the next measurement means. Do not 
 |---|---|---|
 | 0 | Warm-vs-cold baseline: two same-length inputs in one process on one chip, take the **second** one's time. Enable the program cache once. Discard the first-ever run on a fresh machine (a cold cache inflates it ~10x). Measure your card's roofs with the committed micro-benchmark, not the spec sheet. | baseline + named limiter |
 | 1 | Stage decomposition with `ttnn.synchronize_device` before every clock stop. Expect a counterintuitive answer: on one folding model the O(L³) trunk was ~67% and the 6B-parameter LM ~2%. | hotspot named |
-| 1–2 | **Lever 1: device residency.** Kill every host round-trip in the trunk loop and the sampler loop; split conditioning into invariant and per-step. | 1.15x–2x, up to 12x on a sampler |
-| 2 | **Lever 11 (cheap half): recompute hoisting** for anything >25% of per-step cost whose inputs exclude the step variable (one diffusion head: 364 → 113 ms/step). **Lever 9: per-element ops**. slice loops and one-hot matmuls become `ttnn.embedding` lookups (113 → 41 ms/step, bit-identical). | +1.5x–4x on those stages |
+| 1-2 | **Lever 1: device residency.** Kill every host round-trip in the trunk loop and the sampler loop; split conditioning into invariant and per-step. | 1.15x-2x, up to 12x on a sampler |
+| 2 | **Lever 11 (cheap half): recompute hoisting** for anything >25% of per-step cost whose inputs exclude the step variable (one diffusion head: 364 → 113 ms/step). **Lever 9: per-element ops**. slice loops and one-hot matmuls become `ttnn.embedding` lookups (113 → 41 ms/step, bit-identical). | +1.5x-4x on those stages |
 | 3 | **Lever 6: bf16 load + weight cache.** **Lever 10: bucketing**, masked-attention axes only, contraction axes stay at 32. | load 2.6x, cold cost bounded |
-| 3–4 | **Lever 5: sample-dim batching** with the OOM chunking net, if the product exposes a best-of-N or multi-design axis. | 1.5x–5x throughput |
-| 4 | Re-decompose. Levers correctly dismissed as too small now matter: one confidence head went 5% → 15% of a fold once the trunk shrank around it. **"Too small" is not a permanent verdict.** Then **lever 2: trace**, only if a warm eager-vs-traced A/B shows a real delta and the loop is not already resident. | 1.0x–2.2x on that loop |
-| 5 | **Lever 3: L1 residency** with the consumer-chain check and a fire counter. **Lever 8: matmul program config** for any op still far off its measured roof. **Lever 7: multi-device fanout** if throughput rather than latency is the product metric. | +1.05x–1.15x, plus 1.8x–3.5x per 4 chips |
-| 6 | **Lever 4: fusion**, screened absorber-first. Most candidates die in a four-minute microbenchmark; an evidenced NO-GO is a full pass. | 1.06x–1.34x |
-| 6–7 | Multi-size validation: re-run the ladder at a small rung, your tuned size, and a large rung. Any gate that fires at one and is dark at another is a defect, not a tradeoff. | no dark gates |
+| 3-4 | **Lever 5: sample-dim batching** with the OOM chunking net, if the product exposes a best-of-N or multi-design axis. | 1.5x-5x throughput |
+| 4 | Re-decompose. Levers correctly dismissed as too small now matter: one confidence head went 5% → 15% of a fold once the trunk shrank around it. **"Too small" is not a permanent verdict.** Then **lever 2: trace**, only if a warm eager-vs-traced A/B shows a real delta and the loop is not already resident. | 1.0x-2.2x on that loop |
+| 5 | **Lever 3: L1 residency** with the consumer-chain check and a fire counter. **Lever 8: matmul program config** for any op still far off its measured roof. **Lever 7: multi-device fanout** if throughput rather than latency is the product metric. | +1.05x-1.15x, plus 1.8x-3.5x per 4 chips |
+| 6 | **Lever 4: fusion**, screened absorber-first. Most candidates die in a four-minute microbenchmark; an evidenced NO-GO is a full pass. | 1.06x-1.34x |
+| 6-7 | Multi-size validation: re-run the ladder at a small rung, your tuned size, and a large rung. Any gate that fires at one and is dark at another is a defect, not a tradeoff. | no dark gates |
 
-A realistic first-week outcome on a naive but correct port is 3x–6x, dominated by levers 1, 5, 9 and 11. Levers 3, 4, 8
-and 12 are the second month, worth roughly 1.2x–1.5x combined on top of a stack that already has the first four. If a
+A realistic first-week outcome on a naive but correct port is 3x-6x, dominated by levers 1, 5, 9 and 11. Levers 3, 4, 8
+and 12 are the second month, worth roughly 1.2x-1.5x combined on top of a stack that already has the first four. If a
 week produces less than 2x, the most likely cause is that the measurement was never warm, never synced, or never
 decomposed.

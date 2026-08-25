@@ -16,7 +16,7 @@ skills/tt-bio-bringup/
   references/               15 reference documents, loaded on demand
   templates/                the documents the workflow expects you to keep
   gates/port_gate.py        the gate checker the phases call, standard library only
-  examples/                 one small model through every phase, plus a runnable Phase 1 capture
+  examples/                 one small model from Phase 0 to Phase 6, plus a runnable Phase 1 capture
 agents/                     subagent definitions for five recurring roles
 scripts/redaction-check.sh  the check that keeps this repo publishable
 ```
@@ -74,9 +74,7 @@ ln -s ../../third_party/tt-bio-bringup/skills/tt-bio-bringup .claude/skills/tt-b
 cp third_party/tt-bio-bringup/agents/*.md .claude/agents/
 ```
 
-Check it took. Two things about that command: `-L` is required because the install above is a
-symlink and plain `find -type d` will not descend into one, and the result has to be tested rather
-than read, because `find | head -1` exits 0 when it matched nothing.
+Check it took:
 
 ```bash
 export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
@@ -84,6 +82,11 @@ export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
 test -n "$SKILL" && test -f "$SKILL/SKILL.md" && echo "installed at $SKILL" || {
     echo "NOT installed: nothing matched"; false; }
 ```
+
+Three things about that block. `-L` is required because the install above is a symlink and plain
+`find -type d` will not descend into one. The result is tested rather than read, because
+`find | head -1` exits 0 when it matched nothing. And it is exported, because the gate script runs
+commands through `bash -c`, which inherits exported variables only.
 
 `/skills` should also list `tt-bio-bringup`.
 

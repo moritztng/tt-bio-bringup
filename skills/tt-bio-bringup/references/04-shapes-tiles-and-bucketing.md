@@ -247,7 +247,7 @@ kernel fix. `ttnn.scatter` also rejects fp32, and int32/uint32 rows longer than 
   (The 1.80 and 2.34 MB figures that once appeared here were the *requested* totals under a different
   chunk setting, not budgets; `08-memory-and-residency.md` §1 has the one number to size against.)
 
-Together: **11.1% of the fold at 768 tokens, 14.2% at 1024**, on a model whose levers were validated at 512.
+Together: **11.1% of fold wall-clock at 768 tokens, 14.2% at 1024**, on a model whose levers were validated at 512.
 
 **Detection is the log-log runtime exponent between consecutive rungs**, not reading configs: a jump from N^2.03
 (256 -> 512) to N^3.62 (512 -> 768) inside one interval is the signature. Two neighbouring size-only failures:

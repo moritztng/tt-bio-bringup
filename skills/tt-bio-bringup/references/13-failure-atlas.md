@@ -44,7 +44,7 @@ own convention around it. One such fix moved step-0 PCC 0.791 -> 0.99996.
 **Guard.** A step-0 denoiser parity test that asserts both the raw and the preconditioned tensor,
 not just one of them.
 
-### Error is ~70x the reference at some lengths and ~1.4x at others
+### Error is ~72x the reference at some lengths and ~1.4x at others
 **Mechanism.** `ttnn.TILE_LAYOUT` pads physically to 32 on both tile axes while the logical shape
 stays ragged. A fused SDPA kernel reduces over the *physical* extent, and the additive bias only
 covers the logical length, so padded key columns enter softmax at score 0 while real scores sit
@@ -623,8 +623,8 @@ lever was 2.66x in isolation and 1.45x *slower* end to end.
 
 ### 60% of a trimul op is one `ttnn.permute`
 **Mechanism.** A channel-moving permute `(0,3,1,2)` takes the row-major untilize / blocked-transpose
-/ retilize path at ~55 GB/s, versus ~368 GB/s for a last-two-dims transpose and ~383 GB/s for a
-clone. It is implementation-bound, not bandwidth-bound.
+/ retilize path at ~55 GB/s, versus ~368 GB/s for a last-two-dims transpose and ~414 GB/s for a
+clone (`05-perf-method-and-roofline.md` §3). It is implementation-bound, not bandwidth-bound.
 **Check.** Bandwidth-probe each permutation on the same byte count. A 7x gap against a clone on the
 same tensor is the tell.
 **Fix.** Keep the tensor channel-major through the chunk loop so only the cheap transpose is needed,
@@ -648,7 +648,7 @@ fused kernel is proposed as the answer.
 `ttnn.untilize` silently falls back to a single-core kernel, and the boundary differs per chip.
 `use_multicore=True` does not override it and there is no signal.
 **Check.** Force `use_multicore=False` on a known-fast shape of the same size. If that reproduces
-the pathology exactly (one measured case: 36070 us at 10.1 GB/s versus 999 us at 364 GB/s), you
+the pathology exactly (one measured case: 36070 us at 10.1 GB/s versus 998 us at 364.2 GB/s), you
 have confirmed it.
 **Fix.** Row-block the op for the affected shape island only. A blind global swap costs 3x elsewhere.
 **Guard.** A shape-conditional gate, and a note of the bad island's boundary per chip.

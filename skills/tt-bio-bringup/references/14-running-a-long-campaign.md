@@ -58,10 +58,10 @@ Grep for the *shape of a result*, never for a topic keyword:
 
 ```bash
 # BAD: a session that writes "I did not get to the A/B, here's why" satisfies this
-grep -qiE "parity|A/B|PCC" notes/state-<slug>.md
+grep -qiE "parity|A/B|PCC" "notes/state-$SLUG.md"
 
 # GOOD: only a line carrying a real measured number can produce this
-grep -qE '^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}' notes/state-<slug>.md
+grep -qE '^VERDICT-P4: (GO|NO-GO) pcc=0\.[0-9]{4}' "notes/state-$SLUG.md"
 ```
 
 ### Seven ways a done-check lies, and the fix for each
@@ -159,7 +159,8 @@ Three isolations, all required. Missing any one produces failures that look like
 
 ```bash
 git worktree list                                    # check the branch is not checked out already
-git worktree add ~/wt/<slug> -b port/<slug> origin/main
+SLUG=your-workstream-slug
+git worktree add ~/wt/"$SLUG" -b port/"$SLUG" origin/main
 ```
 
 Never `git worktree add -f`. The `-f` overrides the one safety check you want: git normally refuses
@@ -206,9 +207,9 @@ is about why that is not the same thing as the command's output.
 
 ```bash
 git fetch origin
-git log --oneline origin/main..origin/port/<slug>          # what actually landed on the remote
-git diff --stat origin/main...origin/port/<slug>
-git merge-base --is-ancestor <sha> origin/main && echo "already merged"
+git log --oneline "origin/main..origin/port/$SLUG"          # what actually landed on the remote
+git diff --stat "origin/main...origin/port/$SLUG"
+git merge-base --is-ancestor "$SHA" origin/main && echo "already merged"
 ```
 
 Four traps, each of which has silently dropped or duplicated real work:
@@ -227,7 +228,7 @@ Four traps, each of which has silently dropped or duplicated real work:
 
   ```bash
   for b in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
-    git merge-base --is-ancestor <rejected-sha> "$b" 2>/dev/null && echo "$b still contains it"
+    git merge-base --is-ancestor "$REJECTED_SHA" "$b" 2>/dev/null && echo "$b still contains it"
   done
   ```
   For a vendored or deployed copy the acceptance test is byte-identity against source (`diff -r`,

@@ -75,7 +75,8 @@ intent, mark it unconfirmed, and confirm it at step 3.
 **1. Fork and clone tt-bio.** Fork `https://github.com/moritztng/tt-bio` on GitHub, then:
 
 ```bash
-git clone https://github.com/<you>/tt-bio.git
+GH_USER=your-github-username        # bash reads <you> as a redirection, so use a variable
+git clone "https://github.com/$GH_USER/tt-bio.git"
 cd tt-bio
 git remote add upstream https://github.com/moritztng/tt-bio.git
 ```

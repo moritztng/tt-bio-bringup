@@ -1,8 +1,7 @@
 # A worked example: MiniFold, Phase 0 to Phase 6
 
 One small model taken from Phase 0 to Phase 6, with the artifact each gate reads and the output each
-gate prints. It exists because the reference documents describe the method and a filled-in example
-shows it, and the second is what tells you whether you have understood the first.
+gate prints.
 
 **What is real here and what is not.** Everything in Phase 0 and Phase 1 is real: the commands ran
 on a CPU, and the gate output is pasted from the run. From Phase 2 on the commands need a

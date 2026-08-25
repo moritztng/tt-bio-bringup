@@ -34,9 +34,9 @@ problem, not a capacity problem.
 
 Do not quote datasheet bandwidths; measure them (`05-perf-method-and-roofline.md`). Measured on one
 Blackhole part: DRAM read roof 435.2 GB/s, write roof 277.6 GB/s, compute 161.14 TFLOP/s at LoFi and
-100.55 at HiFi4 (`05-perf-method-and-roofline.md` §3 measures all three fidelities; most bio ops run
-HiFi4, so quote that one) (one
-data-movement RISC issuing a writeback reaches only ~59% of the write roof).
+100.55 at HiFi4. `05-perf-method-and-roofline.md` §3 measures all three fidelities; most bio ops run
+HiFi4, so quote that one. A single data-movement RISC issuing a writeback reaches only ~59% of the
+write roof, so the write figure is a ceiling you will not see from one core.
 
 `ttnn.get_max_worker_l1_unreserved_size()` is **not** the number to budget against: on Blackhole it
 reads 1,532,416 B while the allocator reports 1,461,760 B/bank, so a gate sized on the device number

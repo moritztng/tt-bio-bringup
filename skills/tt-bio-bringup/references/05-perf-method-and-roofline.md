@@ -117,7 +117,7 @@ def timed(fn, device, iters, warmup):
 
 A ttnn op call is an asynchronous enqueue. Without the trailing `synchronize_device` the host clock
 stops while the device is still working. Measured on a 2048³ matmul: 0.019 ms/iter unsynced vs
-0.145 ms/iter honest, a **7.68x under-report**. The factor is not a constant, it is however much work
+0.145 ms/iter honest, a **7.63x under-report**. The factor is not a constant, it is however much work
 fits in the command queue, so it grows with the loop you time. tt-bio ships this as
 `scripts/profiling/roofline_bh.py`; run it once per card model and commit the numbers.
 
@@ -293,9 +293,7 @@ ran on every timed fold of the accelerated arm too (no cache). Whole-fold ratio 
 ratio ~9-10x. The whole-fold number was correct for its protocol and understated the accelerator gap
 by 2.5x, flattering whichever side is proportionally slower.
 
-Two corollaries:
-
-Host prep that is **invariant across calls** is a lever, not a constant: one template tensor
+One corollary. Host prep that is **invariant across calls** is a lever, not a constant: one template tensor
 re-uploaded every recycling cycle instead of once per fold cost ~3.6 s/fold, worth 1.06-1.10x for a
 few lines. And when host prep swings 17 % run to run while device phases hold at 2.8 % spread, the
 end-to-end median needs more reps than the device median does.
@@ -369,5 +367,6 @@ A number without these is an anecdote. Refuse to publish or act on one missing a
   A named negative result saves the next pass a day. Never fill a measurement slot from a spec sheet
   or a prior run's memory.
 
-Two related references in this directory carry the rest: the profiling instruments and what each one
-silently lies about, and the numerical-parity method that every perf lever must not break.
+`06-profiling-instruments.md` covers which instrument answers which question and what each one
+silently lies about. `02-parity-and-correctness.md` covers the parity method every lever here must
+not break.

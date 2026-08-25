@@ -260,7 +260,7 @@ all-atom PCC from 1.0 to 0.5 while every valid atom is perfect.
 
 `PCC_max ≈ sigma_R / sqrt(sigma_R**2 + RMSE**2)`. For a target whose true signal is small, a bf16 port cannot
 clear a flat bar shared with higher-signal siblings. One cell measured 0.8926 against a flat 0.9 bar with a
-predicted ceiling of 0.908: 1.6% from its own floor, unreachable by any port. Before calling a PCC failure a
+predicted ceiling of 0.908: **1.5 points below its own ceiling**, so the 0.9 bar was unreachable by any port. Before calling a PCC failure a
 regression, check the reference is deterministic across reruns and compute the ceiling. If measured sits at it,
 re-baseline that cell with the derivation inline and keep an MAE bar as the real guard, since MAE is not
 SNR-distorted.
