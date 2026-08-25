@@ -262,7 +262,7 @@ tt-bio's cannot run the capture at all. Decide which in Phase 0 and write it in
 got, and that is the whole point of naming interpreters.
 
 
-The determinism arm deletes the artifact first, so a run that exits 0 without writing it fails
+The determinism arm moves the artifact aside first, so a run that exits 0 without writing it fails
 instead of passing on a stale file from yesterday. Do not add the fixture's `.meta.json` to that
 list: it records `runtime_s`, which is a measurement and differs run to run, so hashing it fails
 the gate for a reason that is not a defect. The metadata is checked for required keys by the pytest
@@ -282,7 +282,7 @@ slow. It is allowed to be numerically off. It is not allowed to silently skip pa
 **Exit gate:** every reference parameter consumed exactly once, and the same input twice gives the
 same bits.
 
-The forward's artifact path carries `$CARD` on purpose. The determinism arm deletes the artifact
+The forward's artifact path carries `$CARD` on purpose. The determinism arm moves the artifact aside
 before each of its two runs, so two agents on two cards writing one `/tmp/fw.npy` delete each
 other's file between runs and produce a red that is nobody's bug. Any fixed path under `/tmp` has
 this problem.

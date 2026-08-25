@@ -290,28 +290,58 @@ else
     fail=1
 fi
 
-# The GATE 0 lines the example pastes, too. Only the GATE 1 block was compared, so a verdict
-# message the tool cannot produce sat in the example for as long as it took someone to notice.
-for want in "$(printf '%s\n' "GATE 0: phase 0 plan")" "$(printf '%s\n' "GATE 0: report")"; do
-    "$PY" - "$EX" "$want" <<'PYEOF' || fail=1
+# Every GATE line the example pastes, not only the plan block. Checking two prefixes with one
+# hardcoded phrase meant the determinism and prove-red verdicts in the example were compared
+# against nothing: the determinism GATE 1 text sat there for three rounds missing the clause the
+# gate appends when it has stashed an artifact. Each pasted line is now matched to the f-string
+# in the source that produces it, so a reworded message fails here instead of shipping.
+"$PY" - "$EX" <<'PYEOF' || fail=1
 import re, sys
-doc = open(sys.argv[1]).read()
-prefix = sys.argv[2]
-# the tool's own wording, from the source, so this cannot drift silently
-src = open("skills/tt-bio-bringup/gates/port_gate.py").read()
-m = re.search(r'"GATE 0: \{what\} \{path\} ([^"]*)"', src)
-phrase = m.group(1).split("{")[0].strip() if m else None
-if phrase is None:
-    print("  FAIL  could not find the GATE 0 wording in port_gate.py"); sys.exit(1)
-for line in doc.splitlines():
-    if line.startswith(prefix) and phrase not in line:
-        print(f"  FAIL  the example pastes a GATE 0 line the gate cannot produce:")
-        print(f"          {line.strip()}")
-        print(f"        the gate says: ... {phrase} ...")
-        sys.exit(1)
-sys.exit(0)
+doc = " ".join(open(sys.argv[1]).read().split())
+src = open("skills/tt-bio-bringup/gates/port_gate.py").read().splitlines()
+
+def literals(head):
+    """The fixed words of the print() call whose first line contains head."""
+    for i, line in enumerate(src):
+        if head in line:
+            block, depth = [], 0
+            for line in src[i:]:
+                block.append(line)
+                depth += line.count("(") - line.count(")")
+                if depth <= 0:
+                    break
+            text = " ".join(block)
+            words = []
+            for part in re.findall(r'"((?:[^"\\]|\\.)*)"', text):
+                for seg in re.split(r"\{[^}]*\}", part):
+                    seg = " ".join(seg.split())
+                    if len(seg) > 14:
+                        words.append(seg)
+            return words
+    return None
+
+CASES = [
+    ("GATE 0: {what} {path} passed",              "GATE 0: report"),
+    ("GATE 1: {len(differing)} artifact(s)",      "GATE 1: 1 artifact(s) changed"),
+    ("GATE 0: green (0) -> fault injected",       "GATE 0: green (0)"),
+]
+bad = 0
+for head, prefix in CASES:
+    words = literals(head)
+    if not words:
+        print(f"  FAIL  no source wording found for {prefix!r} in port_gate.py"); bad = 1; continue
+    if prefix not in doc:
+        continue                      # the example does not paste this one
+    for w in words:
+        if w not in doc:
+            print(f"  FAIL  the example's {prefix!r} output is missing wording the gate produces:")
+            print(f"          {w}")
+            bad = 1
+            break
+sys.exit(1 if bad else 0)
 PYEOF
-done
+[ "$fail" -eq 0 ] && echo "  ok    every pasted GATE line matches the wording in port_gate.py"
+
 [ "$fail" -eq 0 ] && echo "worked example passes the gates it prescribes" && exit 0
 echo
 echo "The worked example does not pass its own gates. Fix the example, not the gate:"

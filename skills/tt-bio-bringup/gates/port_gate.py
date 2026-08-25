@@ -109,20 +109,56 @@ NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)
 #: all: it is returned with "move the detail to another column", which is an instruction the
 #: reader can follow rather than an accusation the reader knows to be false.
 VERDICT_MAX = 40
-#: Inside the cap these are unambiguous. "went from pass to fail" is the one construction that
-#: names the good outcome using the word for the bad one, so it is excepted before matching.
-NEGATION_HARD = re.compile(
-    r"\b(?:green|passing|passe[sd]|identical|unchanged|no change|nothing to report"
-    r"|already (?:red|failing|broken)|exit (?:code|status) (?:was |of )?0"
-    r"|no error|held (?:at|steady)|did ?n[o']?t|does ?n[o']?t|never|stayed|still)\b", re.I)
-FROM_PASS_TO_FAIL = re.compile(r"\bfrom pass(?:ing)? to fail|\bpass\s*(?:->|\u2192|to)\s*fail", re.I)
+#: Blacklisting negative words did not work either: capping the cell made the evasions shorter,
+#: not impossible. "yes, no fault injected", "yes (not run yet)", "red already, break not needed"
+#: and "y, 0 of 3 controls fired" are all inside 40 characters and all passed a 12-word list.
+#: So the field is a WHITELIST now. An affirmative, then only numbers and a small set of words
+#: that measure or name a transition. Anything else is not called a lie, it is returned with
+#: "put it in a Notes column", which is an instruction rather than an accusation.
+VERDICT_WORD_OK = re.compile(
+    r"^(?:red|green|pass(?:ing|ed|es)?|fail(?:s|ed|ing|ure)?|"
+    r"pcc|maxdiff|rmsd|mae|diff|delta|tol|atol|rtol|sigma|abs|rel|exit|code|"
+    r"at|to|from|on|commit|then|now|went|fell|drop(?:ped|s)?|rose|jumped|and|nan|inf"
+    r")$", re.I)
+#: A number, a scientific-notation number, a percentage, or a commit-shaped hash.
+VERDICT_NUM_OK = re.compile(r"^(?:[0-9][0-9a-fx.eE+_-]*%?|[0-9a-f]{6,}|[<>=~+-]|%)$", re.I)
+#: Naming the transition is the most informative thing a verdict can do, so "green -> red" and
+#: "went from pass to fail" are answers. "red -> red" is not: if the cell mentions a green state
+#: at all, a red one has to come after it.
+GREENISH = re.compile(r"\b(green|pass(?:ing|ed|es)?)\b", re.I)
+REDDISH = re.compile(r"\b(red|fail(?:s|ed|ing|ure)?)\b", re.I)
 
 
-def negated(cell: str) -> bool:
-    body = FROM_PASS_TO_FAIL.sub("", cell)
-    if NEGATION_HARD.search(body):
-        return True
-    return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!:")) for c in re.split(r"[,;:()]", cell))
+def verdict_problem(cell: str) -> str | None:
+    """None if this reads as "the control fired", else why it does not."""
+    if len(cell) > VERDICT_MAX:
+        return (f"holds {len(cell)} characters. This column is a verdict, not a note: keep it "
+                f"under {VERDICT_MAX} and put the explanation in a column of its own. A sentence "
+                "here is read by a person and checked by nobody.")
+    if not AFFIRMATIVE.match(cell):
+        return ("does not start with an affirmative. This column records that the test FAILED "
+                "when you broke it, so it has to start with yes, red, true or confirmed.")
+    rest = AFFIRMATIVE.sub("", cell, count=1)
+    for tok in re.split(r"[\s,;:()\[\]/]+|->|\u2192", rest):
+        tok = tok.strip(".!\u2013\u2014")
+        if not tok or VERDICT_NUM_OK.match(tok) or VERDICT_WORD_OK.match(tok):
+            continue
+        return (f"contains {tok!r}. Past the affirmative this column takes numbers and words that "
+                "measure or name the transition (pcc, maxdiff, red, green -> red, at, commit). "
+                "Anything you want to say in a sentence goes in a Notes column, where a person "
+                "will read it, instead of here, where this gate cannot check it.")
+    # "red -> red" is a transition from nothing: it says the control was already failing.
+    if re.search(r"\b(?:red|fail(?:s|ed|ing|ure)?)\b\s*(?:->|\u2192|to)\s*"
+                 r"\b(?:red|fail(?:s|ed|ing|ure)?)\b", rest, re.I):
+        return ("names the same state on both sides of the transition, so nothing moved. A control "
+                "that was already red before the break proves nothing about the break.")
+    g, r = GREENISH.search(rest), REDDISH.search(rest)
+    if g and not (r and r.start() > g.start()):
+        return ("names a green or passing state with no red one after it. A control that did not "
+                "fire is the finding, not a filled cell.")
+    if any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!:")) for c in re.split(r"[,;:()]", cell)):
+        return "reads as a negative verdict."
+    return None
 
 
 #: A threshold is a number, or a named exactness criterion.
@@ -337,19 +373,10 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" cell answered "no" is the finding, not a filled cell.
-                if v and is_verdict and len(v) > VERDICT_MAX:
-                    problems.append(
-                        f"{path}:{n}: {col!r} holds {len(v)} characters. This column is a verdict, "
-                        f"not a note: keep it under {VERDICT_MAX} and put the explanation in a "
-                        "column of its own. A sentence here is read by a person and checked by "
-                        "nobody, because this gate cannot tell which clause the negation is about.")
-                elif v and is_verdict and (
-                        not AFFIRMATIVE.match(v) or negated(v)):
-                    problems.append(
-                        f"{path}:{n}: {col!r} says {v!r}. This column records that the test FAILED "
-                        "when you broke it, so it has to start with yes, red, true or confirmed, "
-                        "and it must not also say no, pass or green. A control that did not fire "
-                        "is the finding, not a filled cell.")
+                if v and is_verdict:
+                    why = verdict_problem(v)
+                    if why:
+                        problems.append(f"{path}:{n}: {col!r} {why}")
     return problems
 
 
@@ -597,9 +624,17 @@ def _sh(cmd: str) -> int:
     return subprocess.run(["bash", "-c", cmd]).returncode
 
 
+class CannotRead(Exception):
+    """A file this gate must read is not readable. That is exit 2, not a failed gate."""
+
+
 def _sha(path: Path) -> str:
     h = hashlib.sha256()
-    with path.open("rb") as f:
+    try:
+        f = path.open("rb")
+    except OSError as e:
+        raise CannotRead(f"cannot read {path}: {e}") from e
+    with f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
@@ -624,18 +659,27 @@ def gate_determinism(args) -> int:
     # commonest way to get here is a --run that never starts (an unexported $SKILL, a typo). If
     # we unlink first and the command then exits 127, the gate has destroyed the thing it exists
     # to protect and reported "measured nothing".
+    # Check EVERY backup path before moving ANY file. Checking as we went meant a refusal on the
+    # second artifact returned 2 with the first one already renamed and nothing said so: the
+    # message named only the file it refused over, and the reader who followed its instructions
+    # left the other artifact orphaned under a backup name. A gate that half-moves the tree and
+    # reports "measured nothing" is the same defect this whole block was written to avoid.
+    for a in artifacts:
+        if not a.is_file():
+            continue
+        keep = a.with_suffix(a.suffix + ".determinism-backup")
+        if keep.exists():
+            # Never overwrite a backup. One already here means a previous run was interrupted
+            # and that file, not this one, is the golden.
+            print(f"GATE 2: {keep} already exists, so a previous run of this gate did not "
+                  "finish. That file is your artifact from before that run; this one is "
+                  "whatever the interrupted run left. Decide which you want, remove the "
+                  "backup, and re-run. Nothing has been moved.")
+            return 2
     stash = {}
     for a in artifacts:
         if a.is_file():
             keep = a.with_suffix(a.suffix + ".determinism-backup")
-            if keep.exists():
-                # Never overwrite a backup. One already here means a previous run was interrupted
-                # and that file, not this one, is the golden.
-                print(f"GATE 2: {keep} already exists, so a previous run of this gate did not "
-                      "finish. That file is your artifact from before that run; this one is "
-                      "whatever the interrupted run left. Decide which you want, remove the "
-                      "backup, and re-run.")
-                return 2
             a.replace(keep)
             stash[a] = keep
 
@@ -736,7 +780,11 @@ CANNOT_RUN = {
 #: A check that only asks whether a path exists cannot be shown to detect a defect: the only
 #: fault it can see is the file going missing, which is not a defect in the file.
 EXISTENCE_ONLY = re.compile(
-    r"^\s*(?:test|\[\[?)\s+!?\s*-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$", re.I)
+    r"^\s*(?:test|\[\[?)\s+!?\s*-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$"
+    # Reading a file and throwing the bytes away asks the same question in a longer way, and
+    # SKILL.md names it in the same breath as `test -f`. It was not implemented.
+    r"|^\s*(?:cat|head|tail|wc|stat|ls|file)\s+[^|;&]*>\s*/dev/null\s*$"
+    r"|^\s*(?:cat|head|tail)\s+\S+\s*$", re.I)
 
 
 def gate_prove_red(args) -> int:
@@ -956,7 +1004,14 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=gate_prove_red)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except CannotRead as e:
+        # Exit 1 is reserved for "the gate failed and names why". A file the gate cannot open is
+        # not a failed gate, it is a gate that did not run, and the difference is what tells a
+        # reader whether to fix the port or fix the permissions.
+        print(f"GATE 2: {e}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

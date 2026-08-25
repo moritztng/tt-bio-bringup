@@ -299,7 +299,8 @@ which inherits exported variables only, so a plain `SKILL=...` gives you
 `python3: can't open file '/examples/minifold_capture.py'` and `GATE 2`. The block in Phase 0 above
 exports it.
 
-The gate deletes the artifact before each run, so a capture that exits 0 without writing anything
+The gate moves the artifact aside before each run and puts it back if the run fails, so a capture
+that exits 0 without writing anything
 fails instead of passing on yesterday's file. The digest itself is not a constant: it depends on your
 torch build, so yours will differ from the one above and that is fine. What the gate asserts is that
 two runs on one machine agree.
@@ -310,7 +311,9 @@ which is what a rushed capture actually forgets:
 ```
   DIFFERS  scripts/minifold_port/parity_artifacts/minifold_117.pt  fbb3274da9b0deb2  7a0d00154cea94be
 GATE 1: 1 artifact(s) changed between two identical runs. Pin the seeds, the thread count and the
-iteration order before going on: a golden you cannot reproduce cannot prove anything later.
+iteration order before going on: a golden you cannot reproduce cannot prove anything later. Any
+artifact that existed before this run has been put back, so the nondeterministic output is not now
+your golden.
 ```
 
 Note what `--unpinned` had to do to earn that red. Skipping the seed alone was not enough: the toy's
@@ -447,15 +450,17 @@ unattributable end-to-end failure.**
 
 **Negative controls**, because a parity table nobody has watched go red is a list of numbers:
 
-| Test | Injected fault | Went red? |
-|---|---|---|
-| `test_minifold_parity.py::test_ffn` | flip ttnn.gelu to the tanh approximation | yes, 0.9962 |
-| `test_minifold_parity.py::test_attn` | transpose the mask back | yes, 0.712 |
-| `test_minifold_parity.py::test_embed` | offset one token id by 1 | yes, maxdiff 6.25 |
-| `test_minifold_fixtures.py` | corrupt one tensor inside the fixture | yes |
+| Test | Injected fault | Went red? | Notes |
+|---|---|---|---|
+| `test_minifold_parity.py::test_ffn` | flip ttnn.gelu to the tanh approximation | yes, 0.9962 | the whole-model deviation traced back to this one op |
+| `test_minifold_parity.py::test_attn` | transpose the mask back | yes, 0.712 | invisible at L=64 and L=128, the mask was all-ones there |
+| `test_minifold_parity.py::test_embed` | offset one token id by 1 | yes, maxdiff 6.25 | none needed |
+| `test_minifold_fixtures.py` | corrupt one tensor inside the fixture | yes | none needed |
 
-Each row is one `port_gate.py prove-red` run. The gate rejects `pass` and `no` in that last column,
-which is the right opinion: a control that did not fire is the finding, not a filled cell.
+Each row is one `port_gate.py prove-red` run. The verdict column takes an affirmative and a number,
+nothing else: the sentence goes in Notes, where a person reads it, because the gate cannot check a
+sentence. `pass`, `no`, and `yes, red -> red` are all rejected there, which is the right opinion. A
+control that did not fire is the finding, not a filled cell.
 
 Then the task metric, which is a different question from PCC: *illustrative*, top-L/5 long-range
 contact precision 0.71 on device against 0.72 for the reference, on the three-target eval set, inside

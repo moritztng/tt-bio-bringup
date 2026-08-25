@@ -44,7 +44,8 @@ Anything that does not match, with the mechanism and why it is acceptable:
 
 Evidence each test can fail. For each test, what was broken to make it go red, and that it did.
 Keep the verdict under 40 characters, `yes, 0.712` rather than a sentence, and put anything longer
-in the Notes column: the gate checks the verdict as a field and does not parse prose.
+in the Notes column: the gate checks the verdict as a field and does not parse prose. With nothing
+to note, write `none needed`; the gate rejects a blank cell and a bare dash.
 
 | Test | Injected fault | Went red? | Notes |
 |---|---|---|---|

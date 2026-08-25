@@ -87,7 +87,7 @@ PATTERNS=(
   'tailnet ipv4|\b100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}\b'
   'mac address|\b([0-9a-f]{2}:){5}[0-9a-f]{2}\b'
   'home path|/home/[a-z][a-z0-9_-]*|/Users/[a-z][a-z0-9_-]*'
-  'agent or private state dir|\.claude/(?!skills|agents|plugins)|\.config/|\.env\b|\.ssh/|\.aws/|\.gnupg/|\.kube/|\.netrc|/dev/tenstorrent/[0-9]+[[:space:]]*#'
+  'agent or private state dir|\.claude/(?!skills|agents|plugins)|\.config/|\.env\b|\.claude\.json|\.(ssh|aws|gnupg|kube|config)\b|\.ssh/|\.aws/|\.gnupg/|\.kube/|\.netrc|/dev/tenstorrent/[0-9]+[[:space:]]*#'
   'internal host|\.(local|lan|internal|intranet|corp|home|localdomain)\b|\bbmc\b|\bilo\b|\bidrac\b'
   'private ipv6|\bfd[0-9a-f]{2}:[0-9a-f:]{2,}|\bfe80::[0-9a-f:]{2,}'
   'webhook url|hooks\.slack\.com/|discord\.com/api/webhooks/|\.webhook\.office\.com/'
@@ -97,12 +97,12 @@ PATTERNS=(
   # them bare would fire on 15 tracked files and train a reader to ignore every hit. The money
   # arm therefore needs a currency within 24 characters of the word, and the plural forms the
   # earlier version missed are in: "3 FTEs" and "budget: 40k dollars" both scanned clean.
-  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ ?(FTEs?|engineers?)\b|\bbudget(ed|s)?\b[^.\n]{0,24}(\$|£|\bUSD\b|\bEUR\b|\bGBP\b|dollars|euros|pounds|\bmillion\b)|[0-9]+ ?(k|m) ?(dollars|euros|pounds|usd|eur|gbp)\b|\b(GBP|USD|EUR) ?[0-9]'
+  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\b[0-9]{3,} ?(dollars|euros|pounds)\b|\bheadcount\b|\b[0-9]+ ?(FTEs?|engineers?)\b|\bbudget(ed|s)?\b[^.\n]{0,24}(\$|£|\bUSD\b|\bEUR\b|\bGBP\b|dollars|euros|pounds|\bmillion\b)|[0-9]+ ?(k|m) ?(dollars|euros|pounds|usd|eur|gbp)\b|\b(GBP|USD|EUR) ?[0-9]'
   # The assigned form needs 8+ characters after the '=', so "password: hunter2" was a placeholder
   # to it, and the prose form has no '=' at all.
   'secret in prose|\b(password|passwd|passphrase|api key|secret|credential)s?\b[[:space:]]+(is|was|are|were)[[:space:]]+\S{4,}'
   'the words password or secret|\b(password|passwd|passphrase)\b|\bsecret\b'
-  'schedule or commitment|\bQ[1-4] 20[0-9]{2}\b|by end of (Q[1-4]|January|February|March|April|May|June|July|August|September|October|November|December)|\bdeadline\b|\bship date\b'
+  'schedule or commitment|\bQ[1-4] 20[0-9]{2}\b|by end of (Q[1-4]|January|February|March|April|May|June|July|August|September|October|November|December)|\bby [0-9]{4}-[0-9]{2}-[0-9]{2}\b|\bdeadline\b|\bship date\b'
 )
 
 LOCAL="$SELFDIR/redaction-local.txt"
