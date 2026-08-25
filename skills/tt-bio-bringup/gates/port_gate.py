@@ -328,8 +328,10 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     # No length cap on the label. An 80-character cap exempted the two PORT_STATE bullets this
     # check exists for, at 92 and 91 characters, and nothing said so.
     # "- Label:" with nothing after it, or with only a dash, underscore or ellipsis after it.
+    # Anchored on the LAST colon, not the first: a label that itself contains a colon, which is
+    # ordinary in "- The interpreter ($REF_PY for x, ./env/bin/python3 for y):", used to escape.
     empty = [l.strip() for l in bullets
-             if re.match(r"\s*[-*]\s*[^:]+:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", l)]
+             if re.match(r"\s*[-*]\s+.*:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", l)]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")
