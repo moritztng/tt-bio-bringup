@@ -215,7 +215,11 @@ torch is unattainable and is not a target.
   format's own envelope; an absolute PCC cannot tell you that.
 - **Print `ratio = ||mine|| / ||ref||` beside every PCC.** PCC is scale-invariant: a 7.9x norm ratio at
   PCC 0.5 is a scaling bug, not float noise.
-- Bands: per-op ~0.999, per-block >0.99, assembled trunk 0.98-0.999. Deep stacks degrade legitimately.
+- **These bands are a sanity range, not the gate.** Typical: per-op ~0.999, per-block >0.99,
+  assembled trunk 0.98-0.999, and deep stacks degrade legitimately. Use them to notice that a number
+  is implausible for its depth. The gate is the measured bf16 self-envelope of
+  `02-parity-and-correctness.md` §1, because a fixed band is either loose enough to pass a real bug at
+  one depth or tight enough to fail clean arithmetic at another.
 - **PCC has an SNR ceiling.** For true-signal std `sig_R` and device `rmse`, the best achievable is
   `PCC_max = sig_R / sqrt(sig_R**2 + rmse**2)`. A near-zero-signal target can be structurally unable to
   clear a flat bar its siblings clear easily, so compute the ceiling before calling a PCC fail a

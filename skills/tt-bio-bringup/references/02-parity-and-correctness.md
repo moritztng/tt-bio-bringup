@@ -25,22 +25,64 @@ code at one seed lands inside the CPU-vs-CPU self-spread, so CPU fixtures repres
 
 ### 1.2 Capture protocol
 
+Complete, because a half-written capture is the single most expensive mistake available in Phase 1:
+it saves, it loads, it has every key you expect, and it is missing an input.
+
 ```python
-torch.set_grad_enabled(False)
-torch.manual_seed(SEED); np.random.seed(SEED); random.seed(SEED)
-cap = {}
-def hook(name, mod):
-    f = mod.forward
-    def h(*a, **k):
-        out = f(*a, **k)
-        if name + "_out" not in cap:                     # FIRST call only
-            cap[name + "_args"] = [x.detach().float().cpu() if torch.is_tensor(x) else x for x in a]
-            cap[name + "_out"] = _to_cpu(out)
-        return out
-    mod.forward = h
-for name, mod in ref.named_modules(): hook(name, mod)
-ref(**real_input); torch.save(cap, "tests/fixtures/<model>/trunk_golden.pt")
+import dataclasses, random
+import numpy as np, torch
+
+def _to_cpu(x):
+    """Recurse into every container the reference might return. Leaves stay leaves."""
+    if torch.is_tensor(x):
+        return x.detach().to(torch.float32).cpu()
+    if isinstance(x, dict):
+        return {k: _to_cpu(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return type(x)(_to_cpu(v) for v in x)
+    if dataclasses.is_dataclass(x) and not isinstance(x, type):
+        return {f.name: _to_cpu(getattr(x, f.name)) for f in dataclasses.fields(x)}
+    return x                                     # int, float, str, None, a config object
+
+def capture(ref, seed, **real_input):
+    """`ref` is the unmodified reference model, already holding its checkpoint.
+    `real_input` is one real target's features, the kwargs you would pass to `ref(...)`."""
+    torch.manual_seed(seed); np.random.seed(seed); random.seed(seed)
+    torch.use_deterministic_algorithms(True)
+    ref.eval()
+    cap = {}
+
+    def hook(name, mod):
+        fwd = mod.forward
+        def h(*a, **k):
+            out = fwd(*a, **k)
+            if name + "/out" not in cap:                  # FIRST call only
+                cap[name + "/args"] = _to_cpu(a)
+                cap[name + "/kwargs"] = _to_cpu(k)        # keyword inputs too, see below
+                cap[name + "/out"] = _to_cpu(out)
+            return out
+        mod.forward = h
+
+    for name, mod in ref.named_modules():
+        hook(name or "<root>", mod)
+    with torch.no_grad():
+        ref(**real_input)
+    return cap
 ```
+
+Save it under `scripts/<model>_port/parity_artifacts/`, gitignored, fetched from a release asset by a
+script (§1.4). Multi-MB captures do not go in `tests/fixtures/`; that directory is for the kilobyte
+inputs a card-free unit test needs.
+
+**Capture `**kwargs`, not just `*args`.** A submodule called as `blk(s, z, mask=m)` is the dominant
+convention in bio models, and a capture that walks only the positional tuple loses the mask. The
+fixture still saves, still loads, and still has a key for every module, so nothing complains: you
+find out weeks later when the module matches its golden and the model does not match the reference.
+
+**Check the contents, not the keys.** After capturing, assert that the tensors you expect are tensors
+and the shapes are what the module tree says. `_to_cpu` above returns non-tensors untouched on
+purpose, so a `None` where a mask should be survives into the fixture and reads exactly like a
+correctly captured optional argument.
 
 - **First call, not last.** Later recycles and diffusion steps carry compounded state and cannot isolate a module.
 - **Inputs AND outputs.** An output-only golden cannot be replayed into your module.

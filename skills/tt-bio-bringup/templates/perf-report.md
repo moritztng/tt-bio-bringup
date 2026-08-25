@@ -3,6 +3,11 @@
 Every number here must name the hardware, the shape, the dtype, the warm state, the repeat count,
 and the exact command. A number without those is not reproducible and does not belong in this file.
 
+```bash
+python3 scripts/port_gate.py report docs/yourmodel-perf.md \
+    --require-heading "Measured roofs" --require-heading "Op census" --require-heading "Levers"
+```
+
 ## Setup
 
 - Chip generation, card, host:
@@ -43,4 +48,8 @@ better, and a lever whose prediction was wrong by an order of magnitude is a fin
 ## Backlog
 
 Ranked, with each item's ceiling. Re-rank after every landing, because levers dismissed as too small
-grow as the ones above them shrink.
+grow as the ones above them shrink. A killed lever stays in this table with the number that killed
+it, so it cannot come back later on a different metric.
+
+| Item | Ceiling | Decision |
+|---|---|---|

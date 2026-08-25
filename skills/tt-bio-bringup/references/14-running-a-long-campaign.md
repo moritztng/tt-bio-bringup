@@ -116,10 +116,13 @@ Continuity lives in three places, all in the repo or the worktree:
    work is lost work.
 2. **The commits.** Small, one mechanism each, with the measurement in the message. `boltz2 trimul:
    fuse gate+out, 30.9s -> 24.1s, CIF sha unchanged` is worth more than any note about it.
-3. **The state doc.** `notes/state-<slug>.md`, append-only, one section per pass: what was measured
-   (with numbers), what was decided, what is next, what was ruled out and why.
+3. **The state docs.** `notes/PORT_STATE.md` is where the port is, one file for the whole port,
+   amended every session, under two screens. Beside it, one `notes/state-<workstream>.md` per
+   parallel line of work, append-only, one section per pass: what was measured (with numbers), what
+   was decided, what is next, what was ruled out and why. One is the summary a fresh session reads
+   first; the others are the detail behind it.
 
-Name the state doc after the **chain**, not the pass (`state-trimul-perf.md`, not
+Name a workstream doc after the **chain**, not the pass (`state-trimul-perf.md`, not
 `state-trimul-perf-p7.md`), so every pass amends one file. Consequence: tooling that syncs by
 matching the pass slug never matches it, so two machines can each accumulate real content in their
 own copy. Diff before you copy, never overwrite.

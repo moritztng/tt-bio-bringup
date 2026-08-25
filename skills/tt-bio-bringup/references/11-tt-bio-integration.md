@@ -42,9 +42,11 @@ To reuse the reference forward rather than reimplement it, add a **runtime wrapp
 declarative spec table plus one generic adapter. The alternative, building ttnn modules at init from
 the checkpoint, is the vendored-model style. Do not build both.
 
-Everything that is not the port itself lives elsewhere: parity and bisect scripts under
-`scripts/yourmodel_port/`, benchmark drivers and their output under `perf/<task-slug>/`. The repo root
-is an allowlist enforced by `tests/test_repo_root_clean.py`.
+Everything that is not the port itself lives elsewhere: parity and bisect scripts and the pinned
+reference module under `scripts/yourmodel_port/`, benchmark drivers and their output under
+`perf/<task-slug>/`, planning and state under `notes/`. The repo root is an allowlist enforced by
+`tests/test_repo_root_clean.py`, which checks root files only, so a new subdirectory is fine and a
+new root file is not.
 
 ## 2. The public entry point and CLI registration
 
@@ -338,8 +340,12 @@ not evidence, the tests may not be sensitive to the thing that moved.
   a vendored package directory of the same name, and the symptom is a `ModuleNotFoundError` on a
   clean checkout long after the commit. Re-include explicitly (`!tt_bio/_vendor/**/msa/**`) and check
   `git status --ignored` after vendoring.
-- **Planning documents, status updates and task notes stay out of the code repo.** The repo is the
-  product; it is what someone clones.
+- **Keep planning out of the root and out of anything you propose upstream.** Upstream tt-bio
+  gitignores `/notes/` because its planning lives elsewhere. In a private fork it has nowhere else to
+  live and losing it across amnesiac sessions is the failure this whole workflow exists to prevent,
+  so drop that ignore rule and commit `notes/` on your port branch. It is a directory, so the root
+  allowlist in `tests/test_repo_root_clean.py` is unaffected: that test checks root *files*. Record
+  the divergence in `notes/PORT_STATE.md` so the next rebase does not silently restore the rule.
 - **Rebase on upstream in small steps.** A fork that skips six upstream releases and then merges once
   produces a conflict set nobody can review, and the resolution silently reverts fixes. Rebase per
   upstream release, run the suite, keep going.

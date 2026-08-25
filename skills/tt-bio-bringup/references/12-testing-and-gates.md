@@ -12,14 +12,16 @@ gate, debugging a gate that reads green while the model is visibly wrong, or tri
 
 | Layer | Asserts | Against | Home |
 |---|---|---|---|
-| Unit parity | each ported component matches the CPU golden | fixed input, per module | `tests/test_<model>_*.py` + `tests/<model>_reference.py` |
+| Unit parity | each ported component matches the CPU golden | fixed input, per module | `tests/test_<model>_*.py`, loading the reference from `scripts/<model>_port/` |
 | End-to-end parity | the whole device path matches the reference path | committed fixture, fixed seed | `scripts/full_parity_gate.py` leg |
 | Task metric | the artifact the user receives is scientifically right | small held-out set + ground truth | `scripts/release_gate.py` arm |
 | Perf regression | warm throughput has not moved | fixed small input, committed baseline | `scripts/perf_regression.py` entry |
 
-- **Unit parity** scores a number at the component's own boundary. PCC ≥ 0.98 per module is the
-  working bar; maxdiff exactly 0 is far stronger and available wherever the device path is meant to
-  be bit-exact (`05-perf-method-and-roofline.md` covers which ops stay bit-exact under padding). Keep a
+- **Unit parity** scores a number at the component's own boundary. The bar is the measured bf16
+  self-envelope from `02-parity-and-correctness.md` §1, not a fixed constant; PCC ≥ 0.98 per module is
+  a plausibility floor, so a number under it is definitely wrong and a number over it is not
+  automatically right. Maxdiff exactly 0 is far stronger and available wherever the device path is
+  meant to be bit-exact (`05-perf-method-and-roofline.md` covers which ops stay bit-exact under padding). Keep a
   random-weight reference module beside the test so it runs without a checkpoint download.
 - **End-to-end parity** asserts the composition, which no unit test does. The classic escape is a
   component that is bit-exact and whose output is then dropped or fed to the wrong consumer. Score

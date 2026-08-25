@@ -13,7 +13,15 @@ reviewing a performance claim someone else made.
 
 ## 1. The method, in order
 
-Do not reorder. The order is what makes the predictions land.
+**The effort bar, first, because steps 6 and 9 need it.** It is a number you set before the campaign
+and write in `notes/PORT_STATE.md`, not a feeling you have per lever. A workable default: build a
+lever if its Amdahl ceiling is at least 5% of end-to-end time, or at least 2% and under a day of
+work; kill anything below that in writing, with the number. Set your own two figures and keep them
+fixed for the campaign, because a bar that moves per lever is not a bar, it is a preference. Raise
+the percentage if your card time is scarce, lower it if the model is already close to its floor and
+the remaining wins are all small.
+
+Do not reorder the steps. The order is what makes the predictions land.
 
 1. **Measure the real wall.** Retire every number in the lineage that was never a measurement.
 2. **Op census.** Device time per op type, call count, share of total, at the shape you care about.
