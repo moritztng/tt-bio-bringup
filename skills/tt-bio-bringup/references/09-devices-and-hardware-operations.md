@@ -1,14 +1,14 @@
 # Devices and hardware operations
 
 This document decides how you address, pin, share, diagnose and recover Tenstorrent cards. Four standing
-rules: every device-touching process is pinned to an explicit card before `import ttnn`; every per-card
-claim is verified against the kernel node the process actually opened; every kill of a device-holding
-process is SIGINT-first; and no card is trusted after a crash until a fast canary workload has opened it
-and produced a correct result.
+rules: pin every device-touching process to an explicit card before `import ttnn`; verify every per-card
+claim against the kernel node the process actually opened; kill device-holding processes SIGINT-first; and
+trust no card after a crash until a fast canary workload has opened it and produced a correct result.
 
 Read this when a run hangs with no output, when a result differs between two cards, when
 `ttnn.open_device` fails or blocks, when `/dev/tenstorrent` disappears, or before you schedule anything
-whose verdict is bit-exact. Measurement discipline lives in `05-perf-method-and-roofline.md`.
+whose verdict is bit-exact. Measurement discipline lives in `05-perf-method-and-roofline.md`; what counts as
+a passing numerical comparison is in `02-parity-and-correctness.md`.
 
 ## 1. Device identity: two numberings that are not the same
 
@@ -36,9 +36,8 @@ Without opening anything: `grep PCI_SLOT_NAME /sys/class/tenstorrent/tenstorrent
 node 0 to a PCI BDF, and `tt-smi -ls` maps that BDF back to a logical id.
 
 A card quarantined as bad and a card blessed as good differ by one integer in the wrong numbering. Before
-recording "card 2 reproduces it, card 1 does not", read `/proc/<pid>/environ` for the compute process's
-own `TT_VISIBLE_DEVICES` and its device-node fds. Trust the process's environment, not the launcher's
-intent.
+recording "card 2 reproduces it, card 1 does not", read `/proc/<pid>/environ` for the compute process's own
+`TT_VISIBLE_DEVICES` and its device-node fds. Trust the process's environment, not the launcher's intent.
 
 ## 2. One device context per process, and pinning is not optional
 
@@ -49,11 +48,11 @@ module and `os.environ.setdefault("TT_VISIBLE_DEVICES", ...)` there, so an expli
 - Defer `import ttnn` into functions. If the parent imports `ttnn` at module scope, a spawn-based worker
   can no longer pin itself. Use `multiprocessing.get_context("spawn")`, never fork: spawned children
   re-execute module top and pick up the per-worker env.
-- A pinned process sees exactly one device, as logical id 0. Verify with
-  `TT_VISIBLE_DEVICES=N python3 -c "import ttnn; print(ttnn.GetNumAvailableDevices())"` printing `1`.
-- **Unset means "the whole box".** The UMD brings up every *visible* chip, not only the one you open.
-  Measured: `TT_VISIBLE_DEVICES=0,1` reports a 1x1 mesh while the process holds fds on both
-  `/dev/tenstorrent/0` and `/1` for its entire lifetime.
+- A pinned process sees exactly one device, as logical id 0:
+  `TT_VISIBLE_DEVICES=N python3 -c "import ttnn; print(ttnn.GetNumAvailableDevices())"` must print `1`.
+- **Unset means "the whole box".** The UMD brings up every *visible* chip, not only the one you open:
+  `TT_VISIBLE_DEVICES=0,1` reports a 1x1 mesh while the process holds fds on both `/dev/tenstorrent/0` and
+  `/1` for its entire lifetime.
 - **CPU-only tests must be pinned too.** A repo-wide `pytest -q` with no pin enumerates and opens every
   card as an import side effect, colliding with whatever real measurement is running. "This task doesn't
   use hardware" is a claim about intent, not about fds.
@@ -69,13 +68,11 @@ the compute child's env before calling it a collision.
 
 Device bring-up and teardown run through a UMD cross-process init path that is not concurrency safe:
 concurrent opens deadlock in `acquire_mutex`, and a raced open can bring a chip up "remote-only" (no local
-dispatch core) which then throws on the first program dispatch. The fix is a single host-wide advisory
-lock held across the whole open and close, here `/tmp/tt-bio-device-open.lock` (`_device_init_lock()` in
-`tt_bio/tenstorrent.py`).
-
-Consequence: **one stalled opener blocks every device open and close on the box, on every card.** The
-presentation is a whole-host wedge with idle cards, near-zero load average and `tt-smi` exiting 0. It
-looks exactly like hardware failure and is not.
+dispatch core) which then throws on the first program dispatch. The fix is a single host-wide advisory lock
+held across the whole open and close, here `/tmp/tt-bio-device-open.lock` (`_device_init_lock()` in
+`tt_bio/tenstorrent.py`). Consequence: **one stalled opener blocks every device open and close on the box,
+on every card.** The presentation is a whole-host wedge with idle cards, near-zero load average and
+`tt-smi` exiting 0. It looks exactly like hardware failure and is not.
 
 First check: `stat -c %i /tmp/tt-bio-device-open.lock`, then `grep <inode> /proc/locks` (holder is the top
 entry, the rest is a FIFO wait queue), then `ps -o pid,ppid,stat,wchan:24,etimes,time -p <holder_pid>`.
@@ -96,9 +93,9 @@ the lock drops.
 
 ## 4. Telling a wedge from a slow op
 
-A wedged chip: the process sits in `futex_do_wait` at ~0% CPU, the log is frozen right after the banner,
-the device is clocked up at 60-68 W but computing nothing, and no file under the run directory has been
-written for minutes.
+A wedged chip: the process sits in `futex_do_wait` at ~0% CPU, the log is frozen right after the banner, the
+device is clocked up at 60-68 W but computing nothing, and nothing under the run directory has been written
+for minutes.
 
 ```bash
 ps -o pid,stat,wchan:24,etime -p <pid>              # Ssl + futex_do_wait
@@ -114,7 +111,7 @@ Three discriminators that stop the common misdiagnoses:
    grandchild CPU accrual over several minutes (`py-spy dump`, or `/proc/<pid>/stat` deltas).
 2. **A zero-byte log is not a wedge.** A cold first run compiles kernels and can sit at zero bytes for many
    minutes, so a watchdog keyed on "no output by N seconds" kills healthy cold runs. Key it on
-   elapsed-vs-expected for a *warm* run, and set `PYTHONUNBUFFERED=1` so log growth is a stall signal at all.
+   elapsed-vs-expected for a *warm* run, and set `PYTHONUNBUFFERED=1` so log growth is a real stall signal.
 3. **Compare against a measured expectation.** Keep a known wall-clock for a small input on this hardware;
    elapsed above ~3x that with flat CPU is a wedge.
 
@@ -128,22 +125,21 @@ different workload: cheap models run fine on a chip that wedges a diffusion or d
 
 Cheapest first. Do not skip to the bottom.
 
-1. **Free the device.** Nothing below works while a process holds it. SIGINT, wait, then explicit-pid
-   SIGKILL for stragglers (section 6).
-2. **Confirm zero holders**: no `/dev/tenstorrent/*` in any `/proc/*/fd`, `/proc/locks` clean for the open
-   lock.
-3. **Reset the boards** in logical ids: `tt-smi -r 0,1,2,3`, or `tt-smi -r 0` for one. Bare `tt-smi -r`
+1. **Free the device.** Nothing below works while a process holds it: SIGINT, wait, then explicit-pid
+   SIGKILL for stragglers (section 6). Confirm zero holders: no `/dev/tenstorrent/*` in any `/proc/*/fd`,
+   and `/proc/locks` clean for the open lock.
+2. **Reset the boards** in logical ids: `tt-smi -r 0,1,2,3`, or `tt-smi -r 0` for one. Bare `tt-smi -r`
    resets everything on the box. Confirm the output reaches `Re-initializing boards after reset....`.
    Never reset a card another process holds: it fails, or it produces a second wedge.
-4. **Reload the kernel module** if opens still fail *broadly*: with zero open handles (`lsmod` refcount 0),
+3. **Reload the kernel module** if opens still fail *broadly*: with zero open handles (`lsmod` refcount 0),
    `sudo rmmod tenstorrent && sudo modprobe tenstorrent`, then reset again against the freshly loaded
-   module. A board reset does not clear driver-internal device-open state, so driver poison survives step 3
-   and looks exactly like a dead board. On a 32-chip host this cured all 32 chips, four of which had
-   already been written off as hardware-faulty.
-5. **PCI remove and rescan** for one board failing reinit (`Failed to set initial power state: -22`, or
+   module. A board reset does not clear driver-internal device-open state, so driver poison survives it and
+   looks exactly like a dead board. On a 32-chip host this cured all 32 chips, four of which had already
+   been written off as hardware-faulty.
+4. **PCI remove and rescan** for one board failing reinit (`Failed to set initial power state: -22`, or
    tt-smi topology discovery crashing): `echo 1 > /sys/bus/pci/devices/<bdf>/remove; echo 1 >
    /sys/bus/pci/rescan`. Function-level PCI reset alone did not cure this; remove plus rescan did.
-6. **Host reboot** only after 1-5 are exhausted.
+5. **Host reboot** only after 1-4 are exhausted.
 
 **Zero processes is not proof of a clean card.** After a SIGTERM landed mid-run on four cards, the process
 table and the lease files both read clean, and 20 subsequent legs then died with `device open failed /
@@ -191,8 +187,8 @@ Order is always: kill the job, verify the card, then rerun. Not: kill and rerun.
 Symptom: `lspci -d 1e52:` still lists the cards, but `/dev/tenstorrent` is gone, `lsmod | grep tenstorrent`
 is empty, `modinfo tenstorrent` says not found, and `modprobe tenstorrent` reports "Module not found in
 directory /lib/modules/<new-kernel>". Cause: the driver is a DKMS module built per kernel, and an upgrade
-without DKMS autoinstall leaves no `.ko` for the running one. The same symptom appears when the module
-crashed, typically after something was SIGKILLed mid device-op.
+without DKMS autoinstall leaves no `.ko` for the running one. Same symptom if the module crashed, typically
+after something was SIGKILLed mid device-op.
 
 ```bash
 lspci -d 1e52:; dkms status; uname -r            # hardware present, DKMS state, running kernel
@@ -231,11 +227,11 @@ another host was 15/15 clean on the same commit and config. Rules that follow:
    128. Before attributing a hash difference to your change, run the **same-size, same-config,
    fresh-process control twice**. If your signal sits inside that floor, you have measured nothing.
 
-**If you only have one card**, the substitute guard is two-sided: (a) repeat-run determinism, N >= 3
-identical runs of unchanged code, establishing the noise floor before any A/B; and (b) agreement with the
-CPU PyTorch golden within your parity gate's tolerance. Neither alone suffices: (a) passes on a card that
-is consistently wrong, (b) passes on a card that is intermittently wrong. Record the noise floor in the run
-log so a later reader can tell a regression from the floor.
+**If you only have one card** (see also `02-parity-and-correctness.md`), the guard is two-sided:
+(a) repeat-run determinism, N >= 3 identical runs of unchanged code, establishing the noise floor before any
+A/B; and (b) agreement with the CPU PyTorch golden within your parity gate's tolerance. Neither alone
+suffices: (a) passes on a card that is consistently wrong, (b) passes on a card that is intermittently
+wrong. Record the noise floor in the run log so a later reader can tell a regression from the floor.
 
 ## 9. Multi-chip
 
@@ -277,9 +273,9 @@ bring-up.
 
 ## 10. Daily hygiene
 
-**Before a benchmark** (see `05-perf-method-and-roofline.md` for what to measure): confirm no other process holds a
-device fd (`ls -l /proc/*/fd 2>/dev/null | grep -c tenstorrent`); pin `TT_VISIBLE_DEVICES` and verify the
-process sees exactly 1 device; run one warm-up pass and never report the cold, kernel-compiling first run.
+**Before a benchmark** (`05-perf-method-and-roofline.md` covers what to measure): confirm no other process
+holds a device fd (`ls -l /proc/*/fd 2>/dev/null | grep -c tenstorrent`); pin `TT_VISIBLE_DEVICES` and
+verify the process sees exactly 1 device; run one warm-up pass and never report the cold first run.
 
 **Before a parity or bit-exact run:** pin to a card with a clean history, reason written next to the pin;
 run the unchanged-code control at the same size in a fresh process at least twice and record the floor

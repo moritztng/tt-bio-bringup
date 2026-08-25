@@ -2,11 +2,11 @@
 
 This document decides where every tensor in your port lives, how you size it before writing code,
 and what to do when it does not fit. The default: activations interleaved in DRAM, weights uploaded
-once and resident, L1 used only where a producer and *every* consumer of a tensor stay on chip.
-The rest is the arithmetic and the failure modes that make that default hold or break.
+once and resident, L1 only where a producer and *every* consumer of a tensor stay on chip. The rest
+is the arithmetic and the failure modes that make that default hold or break.
 
 Read this when choosing a `memory_config`, sizing a chunk width, hitting an OOM or a
-circular-buffer clash, or deciding whether to keep state on the device between calls.
+circular-buffer clash, or deciding whether to keep state on device between calls.
 
 ## 1. The hierarchy
 
@@ -28,15 +28,14 @@ next op's CBs can overlap and you get `Statically allocated circular buffers in 
 L1 buffers on core range [...]` instead of an out-of-memory error. That message is a *shape*
 problem, not a capacity problem.
 
-Do not quote datasheet bandwidths; measure them (see `05-perf-method-and-roofline.md`). Measured on one Blackhole
-part: DRAM read roof 435.3 GB/s, DRAM write roof 277.6 GB/s, compute roof 137.1 TFLOP/s. A single
-data-movement RISC issuing a writeback reaches only ~59% of the write roof.
+Do not quote datasheet bandwidths; measure them (`05-perf-method-and-roofline.md`). Measured on one
+Blackhole part: DRAM read roof 435.3 GB/s, write roof 277.6 GB/s, compute roof 137.1 TFLOP/s (one
+data-movement RISC issuing a writeback reaches only ~59% of the write roof).
 
 `ttnn.get_max_worker_l1_unreserved_size()` is **not** the number to budget against: on Blackhole it
 reads 1,532,416 B while the allocator reports 1,461,760 B/bank, so a gate sized on the device number
 admits configs that do not fit on a completely idle device. Read the allocator once and cache it;
-`get_memory_view` behaves like a pipeline drain (~6 us) and must never be called per-op in a timed
-region.
+`get_memory_view` behaves like a pipeline drain (~6 us), never call it per-op in a timed region.
 
 ```python
 l1_per_bank = ttnn.get_memory_view(device, ttnn.BufferType.L1).total_bytes_per_bank
@@ -52,17 +51,16 @@ l1_per_bank = ttnn.get_memory_view(device, ttnn.BufferType.L1).total_bytes_per_b
 - **Height / width / block sharded.** Height splits rows (M), width splits the last dim (N), block
   splits both across a 2D core grid.
 
-A shard spec is `(core range set, shard shape, orientation)`. Rules that bite:
+A shard spec is `(core range set, shard shape, orientation)`. Rules that bite: shard shape is in
+**elements** and both dims must be multiples of 32 in TILE_LAYOUT; block sharding needs
+`M_tiles % grid_y == 0` and `N_tiles % grid_x == 0`, else ttnn refuses or silently derives a
+different grid; `ttnn.create_sharded_memory_config` will not derive a shard shape for a
+`CoreRangeSet`, so pass it explicitly when the cores are not a full rectangle; and shard count has
+hardware caps (one p150-class part refuses more than 110 shards despite a larger compute grid).
 
-- Shard shape is in **elements** and both dims must be multiples of 32 in TILE_LAYOUT.
-- Block sharding needs `M_tiles % grid_y == 0` and `N_tiles % grid_x == 0`, else ttnn refuses or
-  silently derives a different grid. A **prime** tile count is pathological: it collapses the derived
-  grid to a single 10-core column whose CB region inflates to ~86% of its bank, versus ~45% at a
-  composite tile count. The worst case is not the biggest input.
-- `ttnn.create_sharded_memory_config` will not derive a shard shape for a `CoreRangeSet`; pass the
-  shape explicitly when the cores are not a full rectangle.
-- Shard count has hardware caps. One p150-class part refuses more than 110 shards even though the
-  compute grid is larger.
+A **prime** tile count is the pathological shard case: it collapses the derived grid to a single
+10-core column whose CB region inflates to ~86% of its bank, versus ~45% at a composite tile count.
+The worst case is not the biggest input.
 
 Choose: start every tensor in interleaved DRAM. Move to L1 only when you can name every consumer and
 show none round-trips through DRAM. One op-level L1-residency win measured 2.66x in isolation and
@@ -73,19 +71,18 @@ and residency just added a copy nobody used.
 
 A tile is 32x32 = 1024 elements. Bytes per tile: `float32` 4096, `bfloat16` 2048, `bfloat8_b` 1088
 (1024 data + 64 shared-exponent), `bfloat4_b` 576. TILE_LAYOUT pads the **last two dims** to 32
-independently, then leading dims multiply:
+independently (`04-shapes-tiles-and-bucketing.md`), then leading dims multiply:
 
 ```
 tiles = prod(shape[:-2]) * ceil(shape[-2]/32) * ceil(shape[-1]/32)
 bytes = tiles * bytes_per_tile[dtype]
 ```
 
-The trap: with `fuse_batch=True` the M a matmul actually runs is `prod(leading_dims) * ceil32(rows)`,
-computed **after** padding, not the logical flattened product. A `% 32` predicate written against the
-logical shape checks the wrong number. A shipped guard computed `M = S²` for an `[S, S, c]` pair
-tensor and refused at every real target size (298 aa gives 88804, `% 32 = 4`), so the "2.17x" it
-advertised never fired in a single real fold, and its own A/B looked bit-exact because both arms ran
-identical code.
+The trap: with `fuse_batch=True` the M a matmul runs is `prod(leading_dims) * ceil32(rows)`, computed
+**after** padding, not the logical flattened product, so a `% 32` predicate on the logical shape
+checks the wrong number. A shipped guard computed `M = S²` for an `[S, S, c]` pair tensor and refused
+at every real target size (298 aa gives 88804, `% 32 = 4`); the "2.17x" it advertised never fired in
+a real fold, and its A/B looked bit-exact because both arms ran identical code.
 
 **Worked example: can a projection's result stay in L1?** `[1, 1, 16384, 256] @ [256, 768]` in bf16
 on a 13x10 grid (130 cores): `m_tiles=512`, `k_tiles=8`, `n_tiles=24`, `tile=2048`, `l1=1,461,760`.
@@ -113,9 +110,9 @@ the guard must decline to the DRAM-writing path. Three rules this encodes:
    wheels in a fitted CB model.
 
 **Guard hygiene.** Any capacity guard needs a counter proving it ADMITS at least once on a real
-input, not on a synthetic benchmark at N=128/256/384 (already tile multiples). Log served/declined
-and assert `served > 0`. A guard that declines 100% of calls is indistinguishable from one that
-works, by every bit-exactness check you can write.
+input, not on a synthetic benchmark at N=128/256/384 (already tile multiples): log served/declined,
+assert `served > 0`. A guard that declines 100% of calls is indistinguishable from one that works by
+every bit-exactness check you can write.
 
 ## 4. OOM is often about the number of allocations, not the total size
 
@@ -129,9 +126,8 @@ TT_THROW ... Statically allocated circular buffers in program 527 clash with L1 
 
 The first is capacity or fragmentation, the second a shape step. **Capture at least 2000 characters
 of exception text, from both ends.** `TT_FATAL` puts the diagnostic parenthetical *last* behind a
-fixed ~78-char file/line prefix, so `str(exc)[:200]` records nothing usable; `TT_THROW` puts its
-payload in the *middle*, followed by the frames naming the op, so head+tail alone elides the
-diagnosis and the op together.
+fixed ~78-char prefix, so `str(exc)[:200]` records nothing usable; `TT_THROW` puts its payload in the
+*middle*, followed by the frames naming the op, so head+tail alone elides diagnosis and op together.
 
 Detection signal for fragmentation: total free is comfortable, largest contiguous block is not.
 
@@ -183,8 +179,8 @@ A slice allocates and copies: `slice.buffer_address() != parent.buffer_address()
   bit-exact, 37 A/A floors clear of noise.
 
 Only a kernel that reads and writes at a page offset deletes assembly cost, i.e. real fusion. Row
-blocking is not a cheap substitute for fusion; do the blocking-cost-versus-residency-return
-arithmetic explicitly before crediting a blocking scheme with any time.
+blocking is not a cheap substitute; do the blocking-cost-versus-residency-return arithmetic
+explicitly before crediting a blocking scheme with any time.
 
 ## 7. Deallocation discipline
 
@@ -230,15 +226,14 @@ threshold well below the smallest input you support rather than near the measure
 boundary is usually driven by a different tensor than the one you are gating.
 
 **Proving a chunked path equals the unchunked one.** In one process, run both and compare final host
-tensors with `torch.equal` (max abs diff exactly 0.0) at three sizes minimum: one where the chunk
-divides the axis, one where it does not (ragged tail), one where two chunked axes have different
-padded lengths. Then compare the whole-output digest at model level. Two widths agreeing bit-for-bit
-is **not** evidence a width-varying scheme is inert: ttnn picks block sizes, core grids and memory
-configs from the shapes it is handed, and the chunk dim is one of those shapes, so it takes a third
-width to falsify. Check also that a divisibility invariant is applied to *every* axis it logically
-covers; a "chunk must divide the padded length" rule enforced on q but not k silently declined a
-fused kernel on 100% of calls (served 0 of 5184) and was invisible at every tile-aligned benchmark
-size.
+tensors with `torch.equal` (max abs diff exactly 0.0) at three sizes minimum: chunk divides the axis,
+chunk does not (ragged tail), and two chunked axes with different padded lengths. Then compare the
+whole-output digest (`02-parity-and-correctness.md`). Two widths agreeing bit-for-bit is **not**
+evidence a width-varying scheme is inert: ttnn picks block sizes, core grids and memory configs from
+the shapes it is handed, and the chunk dim is one of those shapes, so it takes a third width to
+falsify. Check also that a divisibility invariant covers *every* axis it logically applies to: one
+enforced on q but not k silently declined a fused kernel on 100% of calls (served 0 of 5184),
+invisible at every tile-aligned benchmark size.
 
 ## 9. Host RAM and addressable range
 
@@ -275,12 +270,10 @@ only the small per-iteration tensors, `release_cache` frees the resident set so 
 starts clean. "No OOM at the size ceiling" is largely a question of calling `release_cache` at the
 right size-adaptive points.
 
-Residency and trace capture compete rather than compound. A traced region replaces host dispatch, so
-its payoff is capped by that dispatch cost, but replay re-stages every input at its fixed replay
-address each step, and those inputs are exactly the ones residency made resident. Measured −12.3%
-and −74.5% end-to-end on two regions whose isolated screen said 1.25x. Before tracing, measure the
-region's eager host-dispatch time as the ceiling and total the bytes of its inputs not already
-resident.
+Residency and trace capture compete rather than compound: a trace's payoff is capped by the host
+dispatch it replaces, but replay re-stages every input at a fixed replay address each step, and those
+inputs are exactly the ones residency made resident. Measured −12.3% and −74.5% end-to-end on two
+regions whose isolated screen said 1.25x.
 
 **The correctness risk is stale device-side state.** Two mechanisms to guard:
 
@@ -316,16 +309,16 @@ changes the result. A test that still passes with a deliberately wrong key is te
 5. **Count live tensors of the failing shape at the failure point** and delete a redundant or
    derivable copy before building a blocking or chunking lever.
 6. **Bisect the boundary one token at a time, fresh process each side.** Both edges are typically one
-   token wide and are usually *different* mechanisms (one a CB-side tile-boundary jump, the other the
-   L1 term itself vanishing to DRAM, which is a self-healing false negative rather than a fix).
+   token wide and are usually *different* mechanisms (a CB-side tile-boundary jump at one end, the L1
+   term vanishing to DRAM at the other, which self-heals and is not a fix).
 7. **Do not trust a single pass near a boundary.** In a long-lived serving process the clashing
    address depends on that process's own allocator history, so a size that folds today can throw
    tomorrow. Publish the largest size strictly *below* the first observed failure; never interpolate
    across it.
-8. **Guard it.** Add the failing size to the release gate's size ladder plus a footprint check: a
-   footprint regression is invisible to a numerical parity fixture, so measure DRAM high-water
-   directly at the largest supported input. Never A/B performance with the footprint probe enabled;
-   it drains the pipeline and roughly doubles fold time.
+8. **Guard it.** Add the failing size to the release gate's size ladder plus a footprint check
+   (`12-testing-and-gates.md`): a footprint regression is invisible to a numerical parity fixture, so
+   measure DRAM high-water at the largest supported input. Never A/B performance with the footprint
+   probe enabled; it drains the pipeline and roughly doubles fold time.
 
-See `05-perf-method-and-roofline.md` for measuring roofs and A/A floors before crediting any of these levers with
-time.
+See `05-perf-method-and-roofline.md` for measuring roofs and A/A floors before crediting any lever
+here with time.

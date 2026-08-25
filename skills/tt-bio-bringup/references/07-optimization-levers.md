@@ -6,7 +6,7 @@ top-down on a naive port typically takes a first working fold from "far slower t
 striking distance of a GPU baseline. Working it bottom-up (custom kernels first, program-config knobs one op at a time)
 is the most expensive mistake in this repo's history.
 
-Read this when the port is correct, `04-perf-method.md` has given you a measured decomposition and a floor, and you need
+Read this when the port is correct, `05-perf-method-and-roofline.md` has given you a measured decomposition and a floor, and you need
 to pick what to build next.
 
 ## The ranking
@@ -78,13 +78,13 @@ candidate. A 512-residue diffusion loop measured 31.9 s traced vs 31.7 s eager: 
 
 **How to implement.** Reserve `trace_region_size` at `ttnn.open_device` (it cannot be added later),
 `enable_program_cache()` before warmup, run one warmup pass to compile every kernel, pre-allocate persistent input
-buffers, capture, then feed each iteration with `ttnn.copy_host_to_device_tensor` + `execute_trace`.
+buffers, capture, then feed each iteration by `ttnn.copy_host_to_device_tensor` + `execute_trace`.
 
 **How it fails.**
 - **No loop primitive.** N Python iterations record N copies of the body. A 200-step sampler cannot be one trace: at a 1
   GB region it overflows the region assert; at 4 GB `begin_trace_capture` hangs indefinitely. A tt-metal limit, not a
   tuning knob.
-- Allocating inside the captured region throws. The replay owns its output buffer, so return a copy.
+- Allocating inside the captured region throws, and the replay owns its output buffer, so return a copy.
 - **Tracing on top of an already device-resident loop is a no-gain.** Residency already made input staging free, and
   replay collapses op *enqueue* without touching the per-step sync round trip. On one 32-chip fanout, tracing away 399
   of 400 op launches removed 0.001 of 1.007 host cores per fold. If the remaining cost is `ttnn.to_torch` drains, cut
@@ -187,7 +187,7 @@ confidence score and output digest.
 below ~512 residues. Measured: best-of-5 folding 4.06 → 2.44 s warm, with B=4 costing about 1.20x of B=1. On a protein
 LM, 16 seq/s → 250 seq/s at batch 8 (~15x), saturating at batch 16–32 (batch 64 adds ~5%).
 
-**How to predict the win.** Place the fold on the roofline (`04-perf-method.md`). Below N≈1024 in matmul terms you are
+**How to predict the win.** Place the fold on the roofline (`05-perf-method-and-roofline.md`). Below N≈1024 in matmul terms you are
 measuring dispatch, not compute, and batching converts serial dispatch into one program: if the op count per sample is
 unchanged, batching removes `(N-1)` dispatch of everything.
 
@@ -334,7 +334,7 @@ sparse-indirection primitive, and do not assume a fused kernel rescues it. The o
 ## 10. Bucketing and recompilation avoidance
 
 **What it is.** Padding a variable-length axis to a fixed multiple so different inputs reuse compiled kernels. Full
-treatment in `04-perf-method.md`; this is the ranking summary.
+treatment in `05-perf-method-and-roofline.md`; this is the ranking summary.
 
 **When it pays.** When per-shape JIT compile dominates: ~0.85 s per new shape for a small LM, tens of seconds for a
 folding trunk. Compiles are disk-cached (`~/.cache/tt-metal-cache`), so it is one-time per shape per machine; an

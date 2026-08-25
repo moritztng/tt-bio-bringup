@@ -1,13 +1,13 @@
 # Shapes, tiles and bucketing
 
 This document decides one number for you: **pad every variable-length axis to a multiple of 32, mask the pad
-everywhere it can reach a reduction, slice back**. It then says which ops stay bit-exact when you do that and
-which do not, how to price padded compute against kernel recompilation, why a layout mismatch appears as a 36x
-slowdown instead of an error, and what standing guard keeps all of it from rotting at the next size you run.
+everywhere it can reach a reduction, slice back**. It then says which ops stay bit-exact when you do that and which
+do not, how to price padded compute against kernel recompilation, why a layout mismatch appears as a 36x slowdown
+instead of an error, and what guard keeps all of it from rotting at the next size you run.
 
-Read this when you are wiring a variable-length input into a ttnn module, when a port is correct at one sequence
-length and wrong at another, when a per-op profile is dominated by something that is not a matmul, or when a
-lever measured as a win does nothing in a real run.
+Read this when wiring a variable-length input into a ttnn module, when a port is correct at one sequence length and
+wrong at another, when a per-op profile is dominated by something that is not a matmul, or when a lever measured as
+a win does nothing in a real run.
 
 ## 1. The 32x32 tile is the only shape the hardware has
 
@@ -27,11 +27,11 @@ axis to the next multiple of 64 rather than 32 costs up to `(128/96)^3 = 2.37x` 
 (`ttnn.scatter` does). Never assume zero, and never assume the consumer ignores it.
 
 **A predicate on the logical shape tests the wrong number.** `fuse_batch` folds leading dims into M *after* tile
-padding, so the M a matmul runs is `prod(leading_dims) * ceil32(rows)`. A real case: an L1-residency guard
-required `M % 32 == 0` on the flattened M of an `[S, S, c_z]` pair tensor, i.e. it tested `S^2 % 32`: 88804 at
-S=298 (`% 32 == 4`), 13689 at S=117 (`% 32 == 25`). It refused at every real size and the merged "2.17x" win was
-dead in every fold, while its validating A/B ran identical code on both arms and so looked bit-exact and clean.
-Derive tile counts from `padded_shape`, never from the logical shape.
+padding, so the M a matmul runs is `prod(leading_dims) * ceil32(rows)`. A real case: an L1-residency guard required
+`M % 32 == 0` on the flattened M of an `[S, S, c_z]` pair tensor, i.e. it tested `S^2 % 32`: 88804 at S=298
+(`% 32 == 4`), 13689 at S=117 (`% 32 == 25`). It refused at every real size and the merged "2.17x" win was dead in
+every fold, while its validating A/B ran identical code on both arms and so looked clean. Derive tile counts from
+`padded_shape`, never from the logical shape.
 
 ## 2. The hard rule: pad the token axis to 32, mask the tail
 
@@ -53,12 +53,12 @@ def pad_amount(n, mult=TILE): return (-n) % mult
 
 L = tokens.shape[-2]; pad = pad_amount(L)
 if pad:
-    tokens = F.pad(tokens, (0, 0, 0, pad))                          # 1. PAD
+    tokens = F.pad(tokens, (0, 0, 0, pad))                     # 1. PAD
     tmask = torch.zeros(1, L + pad); tmask[:, :L] = 1.0
-    pmask = tmask[..., :, None] * tmask[..., None, :]               # outer product
-    attn_bias = attn_bias + (1.0 - pmask) * -1e9                    # 2. MASK
-    key = key * tmask[..., None]                                    #    zero K/V too
-out = out[..., :L, :]                                               # 3. SLICE BACK
+    pmask = tmask[..., :, None] * tmask[..., None, :]          # outer product, both axes
+    attn_bias = attn_bias + (1.0 - pmask) * -1e9               # 2. MASK  (and zero K/V:)
+    key = key * tmask[..., None]
+out = out[..., :L, :]                                          # 3. SLICE BACK
 ```
 
 - Use `-1e9`, not `-inf`: in bf16 a masked lane times an `inf` bias gives `0 * inf = NaN` in valid lanes. Zero the
@@ -69,9 +69,8 @@ out = out[..., :L, :]                                               # 3. SLICE B
 
 ## 3. Detection recipe
 
-The defect is invisible to any test whose lengths are multiples of 32. Screens at 128 and 512 tokens are correct
+The defect is invisible to any test whose lengths are multiples of 32: screens at 128 and 512 tokens are correct
 and blind simultaneously.
-
 1. **Fold at a deliberately ragged length beside an aligned one** (N=98 and N=128), both against the CPU golden; a
    ragged/aligned error ratio above ~2x is the signature.
 2. **Use captured real tensors.** Random operands at a ragged length reproduce only ~1.55x of a 72x defect: the
@@ -131,11 +130,8 @@ model's own measured numbers in an evidence table beside it, plus a test that re
 - Coarsening the bucket on a superlinear op. On an O(S^3) trunk, 32 -> 64 costs up to 2.37x the triangle work for
   a length just above a boundary. A coarse trunk bucket was implemented on one port and reverted for exactly this.
 - A different axis may want a different constant: an MSA-depth axis padded to 1024 is cheap per unit and dominated
-  by program count, so a coarse bucket is right there and wrong on the token axis.
-- Do not confuse the bucket with an op's internal chunk-size constants (triangle chunk width, transition chunk
-  width). Those are L1-budget constants with hard ceilings, tuned separately.
-- Short-length bucketing A/Bs are dominated by run order and host load: in one replication whichever arm ran first
-  won 6 of 7 times, with a 2.0x within-arm spread. Interleave on a quiet host before believing a bucket comparison.
+  by program count, so a coarse bucket is right there and wrong on the token axis. Do not confuse either with an
+  op's internal chunk-size constants (triangle/transition chunk widths), which are L1-budget constants.
 
 ## 6. Bit-exactness under bucketing: which class is which
 
@@ -149,11 +145,10 @@ model's own measured numbers in an evidence table beside it, plus a test that re
 reduction axis: bf16/fp32 accumulation order changes even with exact zeros.
 
 - Triangle multiplication. Pad-32 vs pad-64 on a trunk: PCC 0.9997 but `max|Δ| = 192`, and a structure RMSD shift
-  of ~0.065 Å. Within noise, but a real distribution shift.
-- Anything normalising by a count you did not correct for the pad (`mean`, `var`, layernorm).
+  of ~0.065 Å: within noise, but a real distribution shift. Same for anything normalising by a count you did not
+  correct for the pad (`mean`, `var`, layernorm).
 
 **Verify per op; do not assume by class name.** Two further traps:
-
 - Per-chunk bit-exactness does not imply fold-level bit-exactness. A transition op's output was found to depend on
   **allocation sequence**: identical values, identical boundaries, all 52 chunks `torch.equal` in isolation, and the
   fold's output still moved. Allocation order is a hidden input to reduction order, so check the final output.
@@ -162,8 +157,7 @@ reduction axis: bf16/fp32 accumulation order changes even with exact zeros.
 
 ## 7. When a batch or sample dimension defeats bucketing
 
-Padding an axis helps only if that axis is what a program's shape keys on. Often it is not.
-
+Padding an axis helps only if that axis is what a program's shape keys on, and often it is not.
 - **Windowed attention.** A model that reshapes to `(B, n_windows, WINDOW, -1)` **before** the encoder has folded
   the window index into the batch dim: one dispatched program already covers all windows regardless of how many
   are real. Bucketing 3584 -> 2560 on that axis removed **zero** programs on a dispatch-bound model and only made
@@ -171,16 +165,16 @@ Padding an axis helps only if that axis is what a program's shape keys on. Often
 - **Per-sample-shaped ops.** With best-of-N batched as B=N, the pair state replicates to `[N,L,L,c]` in both
   sampler and confidence head, so the effective shape varies with N inside a fixed token bucket: the bucket neither
   stabilises the program set nor bounds memory.
-- **A submodule built directly, bypassing the padding wrapper**, arrives at the raw length, so thresholds
-  expressed relative to the padded length misclassify it: one such case counted `too_short: 5440, served: 0` at
-  S=76/117 for a fused route on a model whose nominal residue count was well above the gate.
+- **A submodule built directly, bypassing the padding wrapper**, arrives at the raw length, so thresholds expressed
+  relative to the padded length misclassify it: one case counted `too_short: 5440, served: 0` at S=76/117 for a
+  fused route on a model whose nominal residue count was well above the gate.
 
 **The instrument is an op census (dispatched program count), not a byte count.** If padding an axis does not change
 the number of dispatched programs, bucketing on it buys nothing.
 
 ## 8. Layout: tile vs row-major, and the cost of a retilize
 
-Ops declare which layout they accept. When they disagree, ttnn inserts a conversion. **You get no error, only
+Ops declare which layout they accept; when they disagree ttnn inserts a conversion and **you get no error, only
 time.** A layout mismatch is a perf cliff, visible in a per-op profile as a large non-GEMM data-movement fraction
 and nowhere else.
 
@@ -201,15 +195,14 @@ and nowhere else.
   `use_multicore=False` on a known-fast shape and checking it reproduces the slow number.
 - **Non-tile-aligned head dims cost layout work and can scramble data.** At `head_dim=48`, reshape/permute ops cost
   6x a full linear (72 us vs 11.9 us), and `ttnn.experimental.nlp_create_qkv_heads` reads each head at stride
-  `ceil32(head_dim)` = 64, so a tensor packed at native stride 48 is silently scrambled (random-weight tests pass,
-  real peaked weights give PCC < 0.1). Pad head dims to 32, keep the padded layout through attention, and scale by
-  the *real* `head_dim ** -0.5`.
+  `ceil32(head_dim)` = 64, so a tensor packed at native stride 48 is scrambled (random-weight tests pass, real
+  peaked weights give PCC < 0.1). Pad head dims to 32, keep that layout through attention, scale by the real
+  `head_dim ** -0.5`.
 
 ## 9. Core-grid geometry and per-element ops
 
 Work is split over a rectangular Tensix grid (13x10, 11x10, 8x9, depending on part and harvesting). Two failure
 modes come from the grid, not the tensor.
-
 **Unsatisfiable splits leave holes.** `ttnn.split_work_to_cores(all_cores, units)` raises
 `TT_FATAL work_split.cpp: remaining == 0` under an exact rule: **`units > cores` and `units % cores` is a non-zero
 multiple of the grid height**. Verified over every unit count 1..4000 on ten grids with zero mismatches; on a
@@ -239,11 +232,7 @@ different. That is ~14 cycles/element against `add`'s ~2, the signature of a sca
 (index dtype, ROW_MAJOR vs TILE, `sub_core_grids`, `out=` preallocation). **Do not design a port around
 scatter/gather as cheap sparse indirection.** The levers are calling it less (one decoder called `scatter` twice
 with bit-identical inputs across recycles and cached instead: free, bit-exact, ~7% of the step) or an upstream
-kernel fix. `ttnn.scatter` also rejects fp32, and int32/uint32 tensors whose scatter row exceeds 256 elements.
-
-Grid geometry also makes perf ratios non-transferable between cards: an L1-residency gate can open on 11x10 and stay
-shut on 13x10 with byte-identical output, and storage-grid harvesting is a third axis a compute-grid pin cannot
-normalise. Re-measure per card rather than quoting one card's ratio for another.
+kernel fix. `ttnn.scatter` also rejects fp32, and int32/uint32 rows longer than 256 elements.
 
 ## 10. Shape generality: the size-ladder guard
 
@@ -270,9 +259,9 @@ Together: **11.1% of the fold at 768 tokens, 14.2% at 1024**, on a model whose l
 **The guard is a size-ladder arm in the release gate:**
 
 - Fold every model at a fixed rung set (`256, 512, 640, 768`), baselined per card type in
-  `docs/size_ladder_baseline.json` alongside the grid it was measured on.
-- Take exponent intervals over a **sparse** subset (`256, 512, 768`). Rungs too close together make the exponent a
-  coin flip against noise, and a tolerance wide enough for that noise cannot catch a ~1.4 apparent-exponent cliff.
+  `docs/size_ladder_baseline.json` alongside the grid it was measured on. Take exponent intervals over a **sparse**
+  subset (`256, 512, 768`): rungs too close together make the exponent a coin flip against noise, and a tolerance
+  wide enough for that noise cannot catch a ~1.4 apparent-exponent cliff.
 - Record per rung **which levers actually fired**, by effect (`served` / `declined` counters), not by config. Fail
   when the fired/dark lever set changes, not only when runtime moves: a run that merely succeeds proves nothing
   about whether the optimised path ran. Discard the first, compile-cold measurement per rung; keeping it inflated
@@ -281,8 +270,6 @@ Together: **11.1% of the fold at 768 tokens, 14.2% at 1024**, on a model whose l
 - Build the ladder from **different** inputs, not one sequence tiled or truncated to each length: a ladder derived
   from one protein holds every other property of it (MSA depth, chain count, ligand count) constant, and reports a
   defect conditioned on that property as if it were conditioned on size.
-- Report at the common comparison size, not a model's internal crop size. A model that pins N to 256 after the
-  first recycle will happily produce a headline at 256 that no sibling port's number can be compared against.
 
 A one-off sweep does not survive a week of merges: if nothing in the repo *requires* the ladder, it will not run.
 

@@ -7,8 +7,9 @@ fp32 reference by no more than a bf16 recomputation of that reference differs fr
 becomes a permanent test arm.
 
 Read this when you are about to port a module, when a module diverges, when you are choosing a PCC threshold,
-or before writing the words "parity verified". Performance work is `05-perf-method-and-roofline.md`; do not start it until
-§10 passes.
+or before writing the words "parity verified". Precision levers are `03-precision-and-numerics.md`, tile and
+bucketing mechanics `04-shapes-tiles-and-bucketing.md`, gate wiring `12-testing-and-gates.md`. Performance work
+is `05-perf-method-and-roofline.md`: do not start it until §10 passes.
 
 ## 1. The golden-reference discipline
 
@@ -20,8 +21,7 @@ file. Not a cloud GPU run you cannot reproduce.
 
 No GPU is needed. A CPU reference fold of a 100-300 residue target is minutes to a few hours, paid once per
 fixture. Reference implementations are hardware-invariant in practice: a CPU-vs-GPU check of the same reference
-code at the same seed lands inside the CPU-vs-CPU self-spread, so CPU-generated fixtures represent what a GPU
-user sees.
+code at one seed lands inside the CPU-vs-CPU self-spread, so CPU fixtures represent what a GPU user sees.
 
 ### 1.2 Capture protocol
 
@@ -46,9 +46,9 @@ ref(**real_input); torch.save(cap, "tests/fixtures/<model>/trunk_golden.pt")
 - **Inputs AND outputs.** An output-only golden cannot be replayed into your module.
 - **Save fp32 on CPU**, whatever the reference computed in. Casting at capture time destroys your ability to
   separate your error from the reference's own bf16 error.
-- **fp64 is for op-level screens only.** To rank two kernels, score both against a `torch.float64` evaluation on
-  identical bf16 operands. It is not an end-to-end golden, and an isolated fp64 screen is blind to whether an
-  op's error is coherent in the chain (§6).
+- **fp64 is for op-level screens only.** To rank two kernels, score both against `torch.float64` on identical
+  bf16 operands. It is not an end-to-end golden, and an isolated fp64 screen is blind to whether an op's error
+  is coherent in the chain (§6).
 - **Diffusion capture needs `num_timesteps >= 2`.** The common `zip(schedule, schedule[1:])` sampler idiom yields
   an *empty* loop at 1, so every per-step module silently never runs and the golden holds only the
   step-invariant parts.
@@ -204,9 +204,8 @@ fail every nonzero residual by construction. Justify the margin from the measure
 your clean legs *before* committing the value, and record that derivation.
 
 **This is a design constraint on the port.** The envelope exists only if your model class stays a real
-`nn.Module` runnable on CPU torch with a backend toggle. If you replace it with a device-only class whose
-`load_from_checkpoint` opens a device unconditionally, you have destroyed your own reference and are stuck
-permanently with weaker self-consistency scoring against an external implementation. Keep the torch path runnable.
+`nn.Module` runnable on CPU torch with a backend toggle. Replace it with a device-only class whose
+`load_from_checkpoint` opens a device unconditionally and you have destroyed your own reference, permanently.
 
 **Fake-envelope signature:** numerator and envelope both round to ~0 with a clean PASS (`num=5.49e-15
 env=5.49e-15 ratio=0.00`). That is not excellent parity, it means both sides came from the same code and nothing
@@ -237,29 +236,25 @@ actually see per-sample differences** (a CIF rounded to 3 dp and a results.json 
 and demonstrate the test **failing** on the pre-fix commit or a deliberately perturbed arm. A test never observed
 red is not evidence.
 
-**The ragged-tile trap** is why bucketing is a correctness rule, not a perf preference. `ttnn.TILE_LAYOUT` pads
-physically to 32 on both tile axes while the logical shape keeps the true length, and any op reducing over the
-physical extent reads that tail.
+**The ragged-tile trap** is why bucketing is a correctness rule, not a perf preference (mechanics in
+`04-shapes-tiles-and-bucketing.md`). `ttnn.TILE_LAYOUT` pads physically to 32 on both tile axes while the logical
+shape keeps the true length, so any op reducing over the physical extent reads that tail. An unmasked tail in a
+fused attention put attention mass on padding at **72x the fp64-reference error at every ragged length and ~1.4x
+at every aligned one**; uninitialized tile padding left by a scatter fed `-inf`/3e38 patterns from an earlier
+fold into a softmax, moving coordinates 0.335 Å.
 
-1. **Unmasked tail in fused attention.** The bias covers only the logical length, so padded key columns enter
-   softmax at score 0 while real scores sit well below 0; `exp(0)` wins and attention mass lands on padding.
-   Measured **72x the fp64-reference error at every ragged length, ~1.4x at every aligned one.**
-2. **Uninitialized tile padding.** A scatter writes into a fresh buffer and leaves the padding holding whatever
-   DRAM contained, including `-inf` and 3e38 patterns from an earlier larger fold; a softmax reducing over that
-   axis reads them. Process-history dependent, and it moved coordinates 0.335 Å.
-
-So: bucket every token axis to a multiple of 32 in every model, reusing the shared constants in
-`tt_bio/tenstorrent.py`. When auditing whether a port buckets, grep the **shared** module, not the model file.
-And **bucketing hides a ragged-input kernel bug, it does not fix it**: fix the kernel too and keep a ragged
-fixture so it stays visible. A per-op screen run only at 128 and 512 tokens is correct and blind simultaneously.
+Consequences for parity: bucket every token axis to a multiple of 32, reusing the shared constants in
+`tt_bio/tenstorrent.py`, and grep the **shared** module when auditing whether a port buckets. **Bucketing hides a
+ragged-input kernel bug, it does not fix it**: fix the kernel too and keep a ragged fixture so it stays visible.
+A per-op screen run only at 128 and 512 tokens is correct and blind simultaneously.
 
 ## 5. Structural and geometry metric traps
 
 **Kabsch is not transitive.** Any ensemble-agreement score defined by superposing N samples onto one shared frame
-is reference-*dependent*, because rigid fits do not compose across a non-rigid molecule. Re-deriving with a
-different arbitrary frame moved a pairwise agreement score by up to 0.23 Å and dropped per-cell rank agreement to
-0.0036: two "reference-free" definitions of the same quantity that barely correlate. Use a closed-form pairwise
-definition and validate it against explicit per-pair Kabsch (agreement to ~1e-13 is achievable).
+is reference-*dependent*: rigid fits do not compose across a non-rigid molecule. Re-deriving with a different
+arbitrary frame moved a pairwise agreement score by up to 0.23 Å and dropped per-cell rank agreement to 0.0036,
+two "reference-free" definitions of one quantity that barely correlate. Use a closed-form pairwise definition,
+validated against explicit per-pair Kabsch (agreement to ~1e-13 is achievable).
 
 **An inverted rotation convention produces plausible wrong numbers.** A helper deriving `R` that maps `P` onto `Q`
 and then applying `R.T` to `Q` returns **15.18 Å for an exact rigid copy of a structure** while scoring
@@ -294,11 +289,10 @@ samples; a permutation (device rank 1 matches reference rank 0 at 0.139 Å) mean
 anchoring on the reference's top structure and finding its counterpart across all device samples, requiring the
 match to be 3x closer than the next-best candidate, else falling back to strict rank-0.
 
-**Design models break folding invariants**, and a validator written with folding habits rejects good output:
-sibling designs legitimately differ in atom count; a binder appended to the target's chain is one chain, not two;
-the seed sits at a different level of the sidecar JSON; mmCIF column order is header-defined and differs between
-writers, so a fixed-index slice can read a residue-name field as a coordinate. Resolve CIF columns **by header
-tag**, never by index.
+**Design models break folding invariants**, so a validator written with folding habits rejects good output:
+sibling designs legitimately differ in atom count, a binder appended to the target's chain is one chain not two,
+and mmCIF column order is header-defined, so a fixed-index slice can read a residue-name field as a coordinate.
+Resolve CIF columns **by header tag**, never by index.
 
 ## 6. Error accumulation: a per-op error bar is not a model error bar
 
@@ -339,9 +333,9 @@ random walk: a bf16 `sigmoid` at 46.2% one-sidedness was made bit-identical to t
 **end-to-end regression**, reproduced twice. Mismatch *rate* does not predict payoff; one-sidedness does.
 
 **Instrument 3, in-chain substitution, and its limit.** Swapping one op class for its host-torch twin in the live
-chain **bounds** attribution, it does not **decompose** it. Substitution also removes whatever error cancellation
-that class contributed, so results are non-monotone: two substituted classes each made the chained residual
-*worse*. Use it to rank candidates and find a single strong mover, never to build a per-class budget that sums.
+chain **bounds** attribution, it does not **decompose** it: substitution also removes whatever error cancellation
+that class contributed, so results are non-monotone (two substituted classes each made the chained residual
+*worse*). Rank candidates with it; never build a per-class budget that should sum.
 
 **Corollary:** a per-op win that does not move the chained metric is information, not failure. Halving the two
 worst per-op error terms in one port cut isolated per-block error 2.1x and moved the chained gate score by
@@ -378,9 +372,9 @@ device-vs-supplied-golden read 7.93 Å and looked like total failure; device-vs-
 draws read **1.23 Å RMSD, PCC 0.99997**. Same code, same weights, different noise.
 
 **Why a supplied golden is usually unusable.** `torch.randn(device='cuda')` uses Philox, CPU uses MT19937, ttnn
-has no `randn` at all. Two independent noise realizations of the same stochastic model diverge by the full
-run-to-run spread, multiple Å for a protein, swamping any real port error. Only accept a supplied golden whose
-exact RNG stream is reproducible in your environment.
+has no `randn` at all. Two independent noise realizations of one stochastic model diverge by the full run-to-run
+spread, multiple Å for a protein, swamping any real port error. Only accept a supplied golden whose exact RNG
+stream is reproducible in your environment.
 
 **Verify the sharing, do not assume it.** (1) **Bit-reproducibility:** run the device path twice at the same seed
 and `torch.equal` the dumped noise arrays. (2) **Same backend:** confirm both arms draw from the same generator by
@@ -397,8 +391,7 @@ dumping and comparing, not by reading code. Two traps that break it:
   reference's own floor. That delta alone proves an unseeded RNG, with no need to diff schedule code. It hides
   behind wide structure floors and surfaces first on a tight scalar metric.
 
-**MSA subsampling** is the same problem: pin the MSA by sha256 in the fixture meta, record the subsampling seed
-and depth cap in `settings`.
+**MSA subsampling** is the same problem: pin the MSA by sha256 in the fixture meta, record its seed and depth cap.
 
 **When the envelope legitimately fails on a chaotic target.** If a leg fails and standard precision levers do not
 move it, re-run the identical triple at one or two more seeds and look at the **reference's own** bf16-vs-fp32
@@ -428,9 +421,8 @@ Under `tests/`, running from the checkout, not an installed wheel.
 8. **A regression arm for every bug you fix.** The same change that fixes an escaped bug adds a permanent arm to
    the **default** arm set, and **that arm must be demonstrated failing on the pre-fix commit** or it is theatre.
 9. **A knob with no test at its non-default value is broken at its non-default value.** Every env flag, `--fast`
-   path, chunk width and bucket size gets a test that exercises it end to end. A host-stub test proves control
-   flow, not the device fix: one shipped commit passed green on a host stub while never running its device leg
-   and never fixing the bug it targeted.
+   path, chunk width and bucket size gets a test exercising it end to end. A host-stub test proves control flow,
+   not the device fix: one shipped commit passed green on a host stub while never running its device leg.
 
 ## 10. Checklist before claiming "parity verified"
 
