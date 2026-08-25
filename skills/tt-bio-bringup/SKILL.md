@@ -156,6 +156,15 @@ detect anything, and `prove-red` refuses each one rather than counting it as red
 | renamed the test function | pytest 5 | no tests were collected |
 | broke an import in the test | pytest 2 | collection error |
 | mistyped the command | shell 127 | it never ran |
+| nothing, the pattern no longer matched | whatever it did before | no fault was injected |
+| changed a file the check reads, undeclared | red, for a reason you did not record | you proved some other file moved |
+
+Two refusals sit in front of all of that. A check that only asks whether a path exists
+(`test -f x`, `[ -s x ]`, `cat x > /dev/null`) is rejected outright: the only fault you can inject
+into it is deleting the file, and a check that fails because its subject is gone has not been shown
+to detect anything. And if the break changes a path the `--check` command itself names and you did
+not pass it to `--expect-change`, that is refused too, because the red you are about to see is not
+the red you think it is.
 
 If your check genuinely reports a defect with one of those codes, say so with `--red-exit N` and it
 will hold you to exactly that code.
