@@ -178,7 +178,7 @@ production wheel with no tt-metal build.
   `compute_kernel_config=None` so the stock op ran HiFi2/approx; the new kernel that inherited the trunk's HiFi4 config
   compiled, ran at the expected speed, and was wrong across 88% of elements. Only `torch.equal` caught it.
 - `ttnn.slice` is **always a copy, never a view** (its `buffer_address()` differs from the parent's), so "write into a
-  slice instead of concat" is not an optimization. `ttnn.experimental.slice_write` is ROW_MAJOR only.
+  slice instead of concat" is not an optimization. `ttnn.experimental.slice_write` is not the escape: with an interleaved TILE input it converts to ROW_MAJOR internally, so the copy you deleted comes back as a layout conversion. It keeps TILE only when the input is sharded, and its output must be interleaved either way (`slice_write.cpp` TT_FATALs on a sharded output).
 
 **How to guard.** Bit-exactness at the whole-fold level, not per chunk. Allocation *sequence* is a hidden input to
 reduction order: one rewrite was `torch.equal` on all 52 chunks including the ragged tail and still moved the fold's

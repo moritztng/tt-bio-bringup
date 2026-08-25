@@ -227,6 +227,10 @@ It rejects a blank, a bare dash, and the deferral tokens: `TBD`, `TODO`, `FIXME`
 `figure it out later`, `good enough for now`, `no idea`. The hard tokens are rejected even inside
 backticks, so a document cannot launder one by quoting it.
 
+One deliberate exemption: a soft deferral that names where the answer comes from is an answer. `to be
+measured in Phase 3` and `we will decide the tile multiple first` pass; the same sentences without the
+destination do not. The difference is a plan against a shrug.
+
 ### Phase 1 - Golden capture on CPU
 
 Read: `references/02-parity-and-correctness.md`, `references/03-precision-and-numerics.md`.

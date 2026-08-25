@@ -55,7 +55,8 @@ DEFERRED_SOFT = re.compile(
 #: A cell that says nothing. "lots", "some", "a few": not a value.
 VAGUE_CELL = re.compile(
     r"^(n/?a|_+|lots?|some|many|a few|several|various|misc|assorted|big|small|large|huge|tiny"
-    r"|maybe|probably|roughly|approx|\?+|-+|\.+|etc\.?|see above|as needed|standard|default)$", re.I)
+    r"|maybe|probably|roughly|approx|\?+|[-\u2010-\u2015]+|\.+|etc\.?|see above|as needed"
+    r"|standard|default)$", re.I)
 #: The escape hatch. A blank cell is indistinguishable from an unfinished one, so it stays a
 #: failure, but "nothing here yet" is a real answer in early phases and needs a way to be said.
 #: Deliberately explicit: you have to type it, so the record shows you decided rather than forgot.
@@ -74,7 +75,15 @@ GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+"
 #: pointed the check at whatever came last, which both passed a table saying every control stayed
 #: green and rejected an honest one that had a Notes column after the verdict.
 MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails?\?|did it fail|detected\?|fired\?|"
-                         r"caught\?|verdict", re.I)
+                         r"caught\?", re.I)
+#: "Verdict" only means "did the control fire" under Negative controls. Read as a verdict column
+#: everywhere, it rejected honest work: a component-parity table with a natural Verdict column
+#: saying "pass" was told the column "records that the test FAILED when you broke it".
+VERDICT_WORD = re.compile(r"verdict", re.I)
+
+
+def verdict_column(header: str, in_controls: bool) -> bool:
+    return bool(MUST_BE_YES.search(header) or (in_controls and VERDICT_WORD.search(header)))
 #: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
 #: a PREFIX, so "yes - red at 0.712" and "red on commit abc123" are answers, not violations.
 AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed)( as expected)?)\b",
@@ -86,9 +95,19 @@ NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)
                               r"unknown|n/?a|none)$", re.I)
 #: A negation anywhere in the cell, not only as a clause of its own. "yes, still green" and
 #: "confirmed: the test did not notice" both say the control did not fire.
-NEGATION_ANYWHERE = re.compile(r"\b(still green|stayed green|did ?n[o']?t|does ?n[o']?t|"
-                               r"never|no change|unchanged|passed anyway|still pass(ed|es)?)\b",
-                               re.I)
+#: Enumerating phrases is a losing game, so the "did not fire" shapes are matched by their
+#: grammar: any of still/stayed/remained/was/kept in front of green or passing. "yes, the gate
+#: remained green" was an affirmative with a report of failure inside it and it passed.
+#: "already red" is the other direction: a control that was red before the break proves nothing.
+NEGATION_ANYWHERE = re.compile(
+    r"\b(?:"
+    r"(?:still|stayed|remain(?:s|ed)?|was|were|is|are|kept|continued)\s+"
+    r"(?:green|passing|to\s+pass|the\s+same)"
+    r"|did ?n[o']?t|does ?n[o']?t|never"
+    r"|no change|unchanged|no (?:effect|difference|impact)|nothing to report"
+    r"|passed anyway|still pass(?:ed|es)?"
+    r"|already (?:red|failing|broken|fail(?:ing|ed))"
+    r")\b", re.I)
 
 
 def negated(cell: str) -> bool:
@@ -252,7 +271,8 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
         problems.append(f"{path}: no filled table anywhere, so nothing here is a record of anything")
     for t in tables:
         in_controls_section = "negative control" in section_of.get(t.line_no, "")
-        if in_controls_section and t.rows and not any(MUST_BE_YES.search(h) for h in t.header):
+        if in_controls_section and t.rows and not any(
+                verdict_column(h, in_controls_section) for h in t.header):
             problems.append(
                 f"{path}:{t.line_no}: the table under Negative controls has no column this gate "
                 f"can read as the verdict. Headers are [{' | '.join(t.header)}]. Name one of them "
@@ -283,7 +303,9 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
             for i, cell in enumerate(row):
                 col = t.header[i] if i < len(t.header) else f"col{i + 1}"
                 raw = cell.strip()
-                v = raw.strip("*`").strip()
+                # Zero-width space, word joiner and BOM are invisible to a reader and were a
+                # filled value to this check: a cell holding only U+200B passed.
+                v = re.sub(r"[\u200b\u200c\u200d\u2060\ufeff]", "", raw).strip("*`").strip()
                 # A cell holding only decoration is a blank cell wearing a disguise: stripping
                 # `*` and backticks left nothing, and every check below is guarded on `v`.
                 if raw and not v:
@@ -291,7 +313,7 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                                     "answer. A cell that survives stripping as empty is empty.")
                     continue
                 # Which cell carries the verdict, decided before any escape hatch applies.
-                is_verdict = bool(MUST_BE_YES.search(col))
+                is_verdict = verdict_column(col, in_controls_section)
                 # "none yet" is an answer in most columns and never in this one: a control you
                 # have not run yet is the thing the column exists to make visible. This has to be
                 # tested after is_verdict, or renaming the column re-opens the escape.
@@ -371,8 +393,15 @@ def check_section(path: Path, text: str, name: str) -> list[str]:
     # "- Label:" with nothing after it, or with only a dash, underscore or ellipsis after it.
     # Anchored on the LAST colon, not the first: a label that itself contains a colon, which is
     # ordinary in "- The interpreter ($REF_PY for x, ./env/bin/python3 for y):", used to escape.
+    # Emphasis around the label is invisible to a reader and used to be invisible to this check:
+    # "- **Pinned commit:**" ends in '**', so the pattern did not reach the end of the line and
+    # the bullet read as answered. Every doc in this repo writes labels that way. Trailing
+    # emphasis, backticks and zero-width characters are stripped before matching.
+    def _bare(line: str) -> str:
+        return re.sub(r"[*_`\u200b\u2060\ufeff\s]+$", "", line)
+
     empty = [l.strip() for l in bullets
-             if re.match(r"\s*[-*]\s+.*:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", l)]
+             if re.match(r"\s*[-*]\s+.*:\s*([-_.\u2013\u2014]+|\.{2,})?\s*$", _bare(l))]
     if empty:
         problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
                         f"first is {empty[0]!r}")

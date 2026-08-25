@@ -9,7 +9,14 @@
 # and it is the case this script got wrong once: `git ls-files` alone lists tracked files only,
 # so the scan silently narrowed to the index and reported clean while seeing nothing new.
 set -u
-cd "$(dirname "$0")/.." || exit 2
+# Resolve the script's own directory to an absolute path BEFORE the cd. Both are derived from
+# "$(dirname "$0")", and when $0 is relative the second one resolves against the NEW cwd: run
+# this from inside scripts/ and redaction-local.txt was looked for at ../scripts/, not found,
+# and every org-specific pattern was dropped with no message. The run printed "clean" and
+# exited 0 having never scanned for a single hostname or staff name. That is this script's own
+# headline defect, in this script.
+SELFDIR="$(cd "$(dirname "$0")" && pwd)" || exit 2
+cd "$SELFDIR/.." || exit 2
 
 # Every pattern below is PCRE (lookahead exclusions). A grep without -P does not narrow the
 # scan, it empties it: each invocation exits 2, the hit list is empty, and this script prints
@@ -75,11 +82,19 @@ PATTERNS=(
   'webhook url|hooks\.slack\.com/|discord\.com/api/webhooks/|\.webhook\.office\.com/'
   'email address|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   'non-public git remote|git@(?!github\.com)[a-z0-9][a-z0-9.-]*[:/]|\b(gitlab|bitbucket)\.[a-z]|\bgit\+ssh://'
-  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ (FTE|engineers)\b'
+  # "budget" and "token" are ordinary vocabulary here (L1 budget, sequence token), so matching
+  # them bare would fire on 15 tracked files and train a reader to ignore every hit. The money
+  # arm therefore needs a currency within 24 characters of the word, and the plural forms the
+  # earlier version missed are in: "3 FTEs" and "budget: 40k dollars" both scanned clean.
+  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ ?(FTEs?|engineers?)\b|\bbudget(ed|s)?\b[^.\n]{0,24}(\$|\bUSD\b|\bEUR\b|dollars|euros)|[0-9]+ ?(k|m) ?(dollars|euros|usd|eur)\b'
+  # The assigned form needs 8+ characters after the '=', so "password: hunter2" was a placeholder
+  # to it, and the prose form has no '=' at all.
+  'secret in prose|\b(password|passwd|passphrase|api key|secret|credential)s?\b[[:space:]]+(is|was|are|were)[[:space:]]+\S{4,}'
+  'the words password or secret|\b(password|passwd|passphrase)\b|\bsecret\b'
   'schedule or commitment|\bQ[1-4] 20[0-9]{2}\b|by end of (Q[1-4]|January|February|March|April|May|June|July|August|September|October|November|December)|\bdeadline\b|\bship date\b'
 )
 
-LOCAL="$(dirname "$0")/redaction-local.txt"
+LOCAL="$SELFDIR/redaction-local.txt"
 if [ -f "$LOCAL" ]; then
   n=0
   while IFS= read -r line; do
@@ -107,6 +122,10 @@ if [ -f "$LOCAL" ]; then
     PATTERNS+=("local denylist|$line"); n=$((n + 1))
   done < "$LOCAL"
   echo "loaded $n local pattern(s) from $(basename "$LOCAL")"
+else
+  # Say it. Absent and not-found-because-the-path-was-wrong look identical from the outside,
+  # and a run that scans for no org-specific name at all should not look like a full one.
+  echo "no $LOCAL: scanning for generic shapes only, no hostnames or staff names" >&2
 fi
 
 fail=0
@@ -133,7 +152,7 @@ for entry in "${PATTERNS[@]}"; do
               sed -e 's|github\.com/moritztng|ALLOWED|gI' \
                   -e 's|git@github\.com|ALLOWED|gI' \
                   -e 's|example\.com|ALLOWED|gI' -- "$f" 2>/dev/null \
-                | grep -anPi -- "$rx" 2>/dev/null | sed "s|^|$f:|"
+                | grep -anPi -- "$rx" 2>/dev/null | awk -v f="$f" '{ print f ":" $0 }'
             done < "$FILELIST"
             grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
               | tr '\0' '\n' \

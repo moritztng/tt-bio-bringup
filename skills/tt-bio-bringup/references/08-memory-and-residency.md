@@ -181,7 +181,9 @@ A slice allocates and copies: `slice.buffer_address() != parent.buffer_address()
 
 - Any plan of the form "write into a slice of a preallocated buffer instead of concatenating" is not
   an optimization; the slice allocation *is* the copy you were trying to delete.
-  `ttnn.experimental.slice_write` does not rescue it (ROW_MAJOR only).
+  `ttnn.experimental.slice_write` rescues it only from a sharded input: that path stays tiled, and an
+  interleaved TILE input is converted to ROW_MAJOR first, which is the copy again. The output side
+  must be interleaved regardless, so a sharded resident destination is not addressable this way.
 - A slice inside a hot loop is a hidden allocation per iteration and a hidden DRAM round trip. A
   row-blocking scheme that materialized each block cost +1.820 ms/call (+805 MB/call of re-read,
   re-write and closing concat) while the L1 residency it enabled returned only 1.116 ms: a net loss,

@@ -44,7 +44,7 @@ multiplied or added. Measure one integrated arm. In one campaign two levers scre
 4.77x against near-identical baselines; the integrated arm was 4.37x.
 
 Done properly the predictions are tight: a fused triangle-attention kernel was predicted at
-21.2 ms/block before a line of kernel code existed and measured 21.148, 0.3 % off, per-kernel
+21.2 ms/block before a line of kernel code existed and measured 21.148, 0.2 % off, per-kernel
 decomposition included. The same analysis phase killed a planned megakernel on its predicted landing
 and, in killing it, produced a cheap kernel worth 84 % of the megakernel's gain in one day.
 

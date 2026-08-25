@@ -333,18 +333,24 @@ distance is the module's envelope, and it replaces the Phase 0 guess. The recipe
 | `blocks.0.norm1` | fp32, **skipped** | 0.9999972248 | 1.306e-02 | PCC >= 0.9999 | maxdiff <= 1.4e-02 |
 | `blocks.0.attn` | bf16 | 0.9999880673 | 2.564e-03 | PCC >= 0.999 | PCC >= 0.999988 |
 | `blocks.0.ffn` | bf16 | 0.9999902857 | 2.916e-03 | PCC >= 0.9995 | PCC >= 0.999990 |
-| `blocks.0` | fp32, **skipped** | 0.9999949972 | 2.183e-02 | PCC >= 0.999 | maxdiff <= 2.2e-02 |
+| `blocks.0` | fp32 out, cast inside | 0.9999949972 | 2.183e-02 | PCC >= 0.999 | maxdiff <= 2.2e-02 |
 | `head.proj` | bf16 | 0.9999955072 | 8.110e-03 | PCC >= 0.9995 | PCC >= 0.999995 |
 | `head.out` | bf16 | 0.9999955371 | 7.133e-03 | PCC >= 0.998 | PCC >= 0.999995 |
 | `<root>` | bf16 | 0.9999886189 | 1.089e-02 | PCC >= 0.998 | PCC >= 0.999988 |
 
 **Three of eight rows came back fp32, and that is the finding.** `torch.autocast` keeps
-normalizations, softmax and a list of other ops in fp32, so for `embed`, `blocks.0.norm1` and
-`blocks.0` the instrument would have measured nothing and reported a perfect score: `exact=True`,
-`maxdiff 0.000e+00`. Reading that as "bf16-exact, gate it at maxdiff 0" sets a bar a correct device
-LayerNorm misses by 1.3e-02. **Check the output dtype before you believe the number.** Those three
-rows are measured with the explicit bf16 cast instead, which rounds the accumulation too and is
-therefore an upper bound; the plan records that it is.
+normalizations, softmax and a list of other ops in fp32, so for `embed` and `blocks.0.norm1` the
+instrument measured nothing and reported a perfect score: `exact=True`, `maxdiff 0.000e+00`.
+Reading that as "bf16-exact, gate it at maxdiff 0" sets a bar a correct device LayerNorm misses by
+1.3e-02. Those two rows are measured with the explicit bf16 cast instead, which rounds the
+accumulation too and is therefore an upper bound; the plan records that it is.
+
+**A composite module is the harder case, and `blocks.0` is one.** Its output is fp32 like the other
+two, because the last op is a residual add that autocast leaves alone, but `attn` and `ffn` ran in
+bf16 inside it, so the instrument did measure something: `exact=False`, `maxdiff 5.029e-03`. So an
+fp32 output dtype does not by itself mean the instrument was blind. It means **look at the score
+next**: fp32 out with a saturated score is the blind case, fp32 out with a real residual is a
+measurement. Check both, in that order, before you write a threshold down.
 
 **PCC in float64, not float32.** Take `blocks.0` under autocast, before the explicit cast: maxdiff
 5.029e-03, and `torch.corrcoef` in fp32 returns **0.9999998808**, which is `1 - 2^-23`, the fp32

@@ -35,6 +35,11 @@ print("TTVD", os.environ.get("TT_VISIBLE_DEVICES"),
 Without opening anything: `grep PCI_SLOT_NAME /sys/class/tenstorrent/tenstorrent\!0/device/uevent` maps
 node 0 to a PCI BDF, and `tt-smi -ls` maps that BDF back to a logical id.
 
+The `tt-smi` behaviour described in this file was checked against **5.0.0**. Older builds print a PCI
+device id where 5.0.0 prints the logical id, so `tt-smi --version` before you act on the mapping: the
+whole point of this section is that one integer in the wrong numbering quarantines the wrong card. The
+`/sys` path above is the numbering that does not move between tool versions.
+
 A card quarantined as bad and a card blessed as good differ by one integer in the wrong numbering. Before
 recording "card 2 reproduces it, card 1 does not", read `/proc/<pid>/environ` for the compute process's own
 `TT_VISIBLE_DEVICES` and its device-node fds. Trust the process's environment, not the launcher's intent.

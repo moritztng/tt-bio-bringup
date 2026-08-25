@@ -138,7 +138,9 @@ dir; always wrap in `timeout`. Gotchas costing an afternoon each: include
 `"api/dataflow/dataflow_api.h"`, not the bare `"dataflow_api.h"` (the bare include wedged a device);
 `init_sfpu` needs `eltwise_unary/eltwise_unary.h`; call `mm_init` once per invocation and do all
 gating before all matmul, since interleaving forces mode switches that can hang. L1 is about 1.5 MB
-(1,572,864 B) per core as reported, 1,461,760 B per bank as the allocator will actually give you,
+(1,572,864 B) per core as reported. What the allocator will actually give you is smaller and is not a
+constant: read it at runtime from `get_max_worker_l1_unreserved_size()`, since it moves with the arch,
+the harvesting and the reserved regions. On the Blackhole p150a used here it came back as 1,461,760 B,
 and it is the second you budget against (`08-memory-and-residency.md` §1). A bf16 32x32 tile is
 2048 B, fp32 4096 B. Use `split_work_to_cores` from
 `<tt-metalium/work_split.hpp>` for grid parallelisation.
