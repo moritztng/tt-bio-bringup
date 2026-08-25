@@ -184,7 +184,7 @@ every other caller can pin its own value.
 ```python
 class Shared:
     def __init__(self, *, diffusion_fp32=None):
-        self.diffusion_fp32 = (env_flag("TT_BIO_DIFFUSION_FP32", False)
+        self.diffusion_fp32 = (env_flag("YOURMODEL_DIFFUSION_FP32", False)
                                if diffusion_fp32 is None else diffusion_fp32)
 ```
 
@@ -212,9 +212,13 @@ Before you write any helper, grep for it. These already exist:
 | job discovery, host thread caps, device enumeration | `discover_jobs`, `host_thread_cap`, `detect_tenstorrent_devices` | `tt_bio/runtime.py` |
 | write a structure and its metrics, report progress | the shared writer and reporter | `tt_bio/data/write.py`, `main.py::write_result`, `tt_bio/progress.py` |
 
-Custom kernel sources go under `tt_bio/kernels/<name>/`, loaded at runtime by file path
-(`KERNEL_DIR`, ttnn `KernelDescriptor` `FILE_PATH`), with `compute/` and `dataflow/` subdirectories
-when the kernel has both. A new kernel directory is a packaging event: see section 9.
+Custom kernel sources go under `tt_bio/kernels/<name>/`, loaded at runtime by file path through
+ttnn's `KernelDescriptor` `FILE_PATH`. There is no shared `KERNEL_DIR` export to import: each module
+that hosts a kernel defines its own, `KERNEL_DIR = Path(__file__).resolve().parent / "kernels" /
+"<name>"`, beside the code that uses it. Most kernel directories in the tree are flat, holding
+`compute_*.cpp` and `reader_*.cpp` / `writer_*.cpp` side by side; one splits into `compute/` and
+`dataflow/` subdirectories. Either shape is fine, and section 9's globs are recursive so both are
+covered. A new kernel directory is a packaging event: see section 9.
 
 ## 7. Tests
 

@@ -2,8 +2,12 @@
   "name": "tt-bio-bringup",
   "version": "0.1.0",
   "description": "Port a PyTorch biomolecular model to Tenstorrent hardware inside a tt-bio fork: parity-verified against a CPU golden, optimized against a measured roofline, packaged and gated.",
-  "author": "moritztng",
+  "author": {
+    "name": "moritztng",
+    "url": "https://github.com/moritztng"
+  },
+  "homepage": "https://github.com/moritztng/tt-bio-bringup",
+  "repository": "https://github.com/moritztng/tt-bio-bringup",
   "license": "MIT",
-  "skills": ["skills/tt-bio-bringup"],
-  "agents": ["agents"]
+  "keywords": ["tenstorrent", "ttnn", "tt-bio", "model-porting", "protein-structure"]
 }

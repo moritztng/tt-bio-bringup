@@ -15,7 +15,7 @@ skills/tt-bio-bringup/
   SKILL.md                  the workflow: 8 phases, each with a machine-checkable exit gate
   references/               14 reference documents, loaded on demand
   templates/                the documents the workflow expects you to keep
-agents/                     subagent definitions for the four recurring roles
+agents/                     subagent definitions for five recurring roles
 scripts/redaction-check.sh  the check that keeps this repo publishable
 ```
 
@@ -43,25 +43,40 @@ long list of ways a port silently goes wrong while every test stays green.
 
 ## Install
 
-As a plain Claude Code skill:
+Two ways. The plugin gets you the skill and all five subagents in one command; the symlink gets you
+the skill only.
+
+**As a plugin**, from inside Claude Code:
+
+```
+/plugin marketplace add moritztng/tt-bio-bringup
+/plugin install tt-bio-bringup@moritztng
+```
+
+**As a plain skill**, for one machine:
 
 ```bash
 git clone https://github.com/moritztng/tt-bio-bringup.git
+mkdir -p ~/.claude/skills ~/.claude/agents
 ln -s "$PWD/tt-bio-bringup/skills/tt-bio-bringup" ~/.claude/skills/tt-bio-bringup
+cp tt-bio-bringup/agents/*.md ~/.claude/agents/
 ```
 
-Or per project, so your whole team gets it from the repo:
+Or per project, so the whole team gets it from your own repo:
 
 ```bash
-mkdir -p .claude/skills
+mkdir -p .claude/skills .claude/agents
 git submodule add https://github.com/moritztng/tt-bio-bringup.git third_party/tt-bio-bringup
 ln -s ../../third_party/tt-bio-bringup/skills/tt-bio-bringup .claude/skills/tt-bio-bringup
+cp third_party/tt-bio-bringup/agents/*.md .claude/agents/
 ```
 
-The subagent definitions are separate. Copy the ones you want into `.claude/agents/`:
+Check it took: `/skills` lists `tt-bio-bringup`, and the reference documents are where the subagents
+look for them:
 
 ```bash
-mkdir -p .claude/agents && cp agents/*.md .claude/agents/
+find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
+     -path '*tt-bio-bringup*' 2>/dev/null | head -1
 ```
 
 ## Using it

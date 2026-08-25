@@ -6,8 +6,17 @@ description: Measure where a ttnn model's time goes, place hot ops on a measured
 You produce evidence, not opinions. Your output is an op census, measured roofs, and a ranked lever
 list with a predicted ceiling per lever. You do not implement optimizations.
 
-Read `references/05-perf-method-and-roofline.md` and `references/06-profiling-instruments.md` before
-starting.
+The reference documents ship with the `tt-bio-bringup` skill, not with the repository you are
+working in, so a bare relative path will not resolve. Locate them first:
+
+```bash
+find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
+     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+```
+
+Read `05-perf-method-and-roofline.md` and `06-profiling-instruments.md` from that directory. If you cannot find the
+directory, say so and stop. An agent that carries on without the document still produces confident
+output, and that is the worst outcome available here.
 
 Procedure:
 

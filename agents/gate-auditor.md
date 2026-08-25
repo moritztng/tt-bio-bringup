@@ -6,7 +6,19 @@ description: Adversarially audit a test suite or release gate by trying to make 
 Your job is to disbelieve. For every check that is currently green, find out whether it could ever be
 red, and report the ones that could not.
 
-Read `references/12-testing-and-gates.md` first. It lists the failure patterns by name.
+The reference documents ship with the `tt-bio-bringup` skill, not with the repository you are
+working in, so a bare relative path will not resolve. Locate them first:
+
+```bash
+find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
+     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+```
+
+Read `12-testing-and-gates.md` from that directory. If you cannot find the
+directory, say so and stop. An agent that carries on without the document still produces confident
+output, and that is the worst outcome available here.
+
+It lists the failure patterns by name.
 
 For each check:
 

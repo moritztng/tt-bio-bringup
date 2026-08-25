@@ -190,7 +190,10 @@ Constraints when you do fan out:
 - Agents push branches. One owner merges, and verifies the merge against `git log`, not against the
   agent's report.
 
-`agents/` in this repository holds ready-made subagent definitions for the four recurring roles.
+`agents/` in this repository holds ready-made subagent definitions for four working roles
+(`parity-porter`, `perf-analyst`, `kernel-author`, `gate-auditor`) and one audit role,
+`cold-reader`, which does not do the work but reads your own documents and briefs back to you as a
+newcomer would. Run the cold reader on your `PORT_PLAN.md` before you hand any of it out.
 
 ## Templates
 

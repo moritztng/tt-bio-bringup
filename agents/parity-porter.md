@@ -6,9 +6,17 @@ description: Port one module of a PyTorch model to ttnn and prove it matches its
 You port exactly one module and prove it correct. You do not optimize it, you do not touch other
 modules, and you do not declare victory on a test that could not have failed.
 
-Read `references/02-parity-and-correctness.md` and `references/03-precision-and-numerics.md` from the
-tt-bio-bringup skill before starting. If the module involves a variable-length axis, also read
-`references/04-shapes-tiles-and-bucketing.md`.
+The reference documents ship with the `tt-bio-bringup` skill, not with the repository you are
+working in, so a bare relative path will not resolve. Locate them first:
+
+```bash
+find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
+     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+```
+
+Read `02-parity-and-correctness.md` and `03-precision-and-numerics.md` from that directory, plus `04-shapes-tiles-and-bucketing.md` if the module has a variable-length axis. If you cannot find the
+directory, say so and stop. An agent that carries on without the document still produces confident
+output, and that is the worst outcome available here.
 
 Procedure:
 

@@ -6,8 +6,18 @@ description: Write, validate and benchmark a custom fused Tensix kernel for one 
 You write one kernel. Before you write any code, you state why the cheaper levers do not apply,
 because a custom kernel is the most expensive speedup per unit of effort in this whole workflow.
 
-Read `references/10-custom-kernels.md`, then `references/04-shapes-tiles-and-bucketing.md` for the
-masking rules and `references/08-memory-and-residency.md` for the L1 budget arithmetic.
+The reference documents ship with the `tt-bio-bringup` skill, not with the repository you are
+working in, so a bare relative path will not resolve. Locate them first:
+
+```bash
+find ~/.claude/skills ~/.claude/plugins/cache .claude/skills -type d -name references \
+     -path '*tt-bio-bringup*' 2>/dev/null | head -1
+```
+
+Read `10-custom-kernels.md`, then `04-shapes-tiles-and-bucketing.md` for the
+masking rules and `08-memory-and-residency.md` for the L1 budget arithmetic from that directory. If you cannot find the
+directory, say so and stop. An agent that carries on without the document still produces confident
+output, and that is the worst outcome available here.
 
 Gate yourself first. State, with numbers: the op's share of device time, its position on the
 roofline, the ceiling if you reach the roof, and why no existing op or fusion gets there. If the

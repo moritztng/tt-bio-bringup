@@ -147,10 +147,10 @@ artifact is the shape that ships dropped outputs.
 - **Record the conditions, not just the number.** A baseline entry must be self-describing:
 
 ```json
-"boltz2": {"unit": "structures/s", "direction": "higher", "value": 1.497659, "latency_ms": 667.71,
+"yourmodel": {"unit": "structures/s", "direction": "higher", "value": 1.25, "latency_ms": 800.0,
   "input": "trpcage (20 aa, single-seq)", "sampling_steps": 10, "diffusion_samples": 1,
-  "recycling_steps": 1, "warmup": 2, "repeat": 5, "hardware": "blackhole", "card_type": "p300c",
-  "tt_bio_version": "0.2.5", "date": "2026-07-13"}
+  "recycling_steps": 1, "warmup": 2, "repeat": 5, "hardware": "blackhole", "card_type": "p150a",
+  "tt_bio_version": "0.7.1", "date": "2026-01-01"}
 ```
 
 - **Key baselines by card type, and by machine where machines differ.** A p300c number judged
@@ -250,13 +250,13 @@ scripts/release_gate.py
 
 ```
 ##############################################################################
-RELEASE GATE: 7ROA (117 aa), seed 48, card p150a, ttnn 0.68.0, tt_bio /path/to/checkout
+RELEASE GATE: 7ROA (117 aa), seed 48, card p150a, ttnn 0.68.0, tt_bio <resolved path>
 ##############################################################################
 model            RMSD (A)      TM           floor     wall  result
-boltz2               1.55   0.913   <=3.0A >=0.80    52.1s  PASS
-mymodel              7.42   0.412   <=3.0A >=0.80    61.7s  FAIL
+inherited            1.55   0.913   <=3.0A >=0.80    52.1s  PASS
+yourmodel            7.42   0.412   <=3.0A >=0.80    61.7s  FAIL
 ##############################################################################
-GATE FAIL: mymodel missed the ground-truth floor (see above)
+GATE FAIL: yourmodel missed the ground-truth floor (see above)
 ```
 
 Exit `0` every selected arm passed; `1` an arm failed its assertion, the code under test is suspect;

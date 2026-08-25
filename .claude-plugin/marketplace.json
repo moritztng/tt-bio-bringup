@@ -1,0 +1,14 @@
+{
+  "name": "moritztng",
+  "owner": {
+    "name": "moritztng",
+    "url": "https://github.com/moritztng"
+  },
+  "plugins": [
+    {
+      "name": "tt-bio-bringup",
+      "source": "./",
+      "description": "Port a PyTorch biomolecular model to Tenstorrent hardware inside a tt-bio fork, to production quality: parity against a CPU golden, a measured roofline, packaging and a release gate."
+    }
+  ]
+}
