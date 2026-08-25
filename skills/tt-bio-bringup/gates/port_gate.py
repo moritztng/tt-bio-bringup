@@ -645,6 +645,14 @@ def gate_prove_red(args) -> int:
                     out.append(str(q))
         return out
 
+    absent = [q for q in watched if not Path(q).exists()]
+    if absent:
+        print(f"GATE 2: --expect-change names {', '.join(absent)}, which does not exist.")
+        print("  Name the file the break edits, as it is spelled right now. A path that is not\n"
+              "  there cannot be shown to change, and the run would report that nothing was\n"
+              "  injected while your break edited something else.")
+        return 2
+
     if EXISTENCE_ONLY.match(args.check):
         print(f"GATE 2: {args.check!r} only asks whether a path exists.")
         print("  There is no fault you can inject into that file that it will notice, because the\n"
