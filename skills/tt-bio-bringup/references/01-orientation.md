@@ -66,7 +66,10 @@ See `11-tt-bio-integration.md` for the file-by-file conventions.
 Nothing below is Tenstorrent-specific expertise. It is the install.
 
 **You do not have to wait for it.** Phase 0 and Phase 1 are card-free by construction: mapping the
-model and capturing a CPU golden need torch and nothing else, and they are usually a week of work. If
+model and capturing a CPU golden need torch, plus an importable `ttnn` for the plan's op-inventory
+column, and they are usually a week of work. Neither needs a card: `import ttnn` works with no device
+present as long as `TT_VISIBLE_DEVICES` is pinned empty, which is what
+`15-torch-to-ttnn-op-map.md` §1 does. Step 2 below is the only part of day zero Phase 0 waits on. If
 your hardware is still in a box, or the driver is not up yet, start Phase 0 now and do day zero in
 parallel. What you cannot do is enter **Phase 2**, where the first device code runs, before steps 3
 to 5 below pass. Two Phase 0 fields do want the hardware (chip generation and card count): write your

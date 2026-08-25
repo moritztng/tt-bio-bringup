@@ -17,7 +17,7 @@ skills/tt-bio-bringup/
   templates/                the documents the workflow expects you to keep
   gates/port_gate.py        the gate checker the phases call, standard library only
   examples/                 one small model from Phase 0 to Phase 6, plus a runnable Phase 1 capture
-agents/                     subagent definitions for five recurring roles
+agents/                     subagent definitions for five roles: four that work, one that audits
 scripts/redaction-check.sh  the check that keeps this repo publishable
 ```
 
@@ -87,6 +87,10 @@ Three things about that block. `-L` is required because the install above is a s
 `find -type d` will not descend into one. The result is tested rather than read, because
 `find | head -1` exits 0 when it matched nothing. And it is exported, because the gate script runs
 commands through `bash -c`, which inherits exported variables only.
+
+If it prints `NOT installed`, you are working from a plain clone rather than an install, which is
+fine: set `SKILL` to the clone's own `skills/tt-bio-bringup` directory and carry on. Everything in
+the workflow reads `$SKILL`.
 
 `/skills` should also list `tt-bio-bringup`.
 

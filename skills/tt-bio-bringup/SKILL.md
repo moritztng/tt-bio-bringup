@@ -134,7 +134,8 @@ command instead of a decision, which is the only reason it actually gets done.
 
 Read: `references/01-orientation.md`, plus `references/02-parity-and-correctness.md` §1.2-1.4 for
 the fixture conventions and §3.4 for how thresholds get chosen, because the plan has to name both,
-and `references/15-torch-to-ttnn-op-map.md` for the op-inventory column, which is the one place the
+`references/03-precision-and-numerics.md` §7 for the plausibility bands your first-guess thresholds
+come from, and `references/15-torch-to-ttnn-op-map.md` for the op-inventory column, which is the one place the
 plan asks you for a fact rather than a decision. Do not guess a ttnn op name: §1 of that document
 answers it in one command. `examples/worked-example.md`
 shows a filled-in plan for a small model, with the gate output, if you would rather see one than read

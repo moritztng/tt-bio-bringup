@@ -115,6 +115,21 @@ check "blank plan template is red" 1 x plan skills/tt-bio-bringup/templates/PORT
 check "blank parity template is red" 1 x report skills/tt-bio-bringup/templates/parity-report.md \
       --require-heading "Component parity" --require-heading "Negative controls"
 
+# 5. The example pastes the gate's own output for the blank template. That output carries line
+#    numbers, so every edit to the template invalidates it, and it has gone stale twice. Compare
+#    the problem count and the first line number against a live run.
+"$PY" "$GATE" plan skills/tt-bio-bringup/templates/PORT_PLAN.md > "$TMP/live" 2>&1
+live_n=$(sed -n '1s/.*finished\. \([0-9]*\) problem.*/\1/p' "$TMP/live")
+doc_n=$(grep -m1 -o "is not finished\. [0-9]* problem" "$EX" | grep -o "[0-9]*")
+if [ "$live_n" = "$doc_n" ]; then
+    printf '  ok    pasted gate output still matches a live run (%s problems)\n' "$live_n"
+else
+    printf '  FAIL  pasted gate output is stale: the example says %s problems, a live run says %s.\n' \
+           "$doc_n" "$live_n"
+    printf '        Re-paste it. A document that says its output came from a run has to mean it.\n'
+    fail=1
+fi
+
 [ "$fail" -eq 0 ] && echo "worked example passes the gates it prescribes" && exit 0
 echo
 echo "The worked example does not pass its own gates. Fix the example, not the gate:"

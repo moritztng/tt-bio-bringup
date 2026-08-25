@@ -20,6 +20,11 @@ Fill the hardware lines from `tt-smi -ls` once you have a card. Before then, sta
 append "unconfirmed"; the gate wants a stated answer, not a confirmed one, and an unconfirmed value
 you can see is better than a blank you cannot.
 
+The gate accepts exactly these as "not known yet", and rejects a blank: `unconfirmed`, `none yet`,
+`not yet`, `none needed`, `no fix needed`, `n/a, <the reason>`.
+It rejects the deferral phrasings and a bare dash, because those record that you stopped rather than
+what you decided. `port_gate.py` names the one it found when it fires.
+
 - Chip generation and card count:
 - Supported size range to ship (state numbers, not "large"):
 - Input modes to support:

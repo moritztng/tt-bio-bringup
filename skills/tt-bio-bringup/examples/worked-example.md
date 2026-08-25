@@ -71,13 +71,13 @@ The template starts red, and it names every hole:
 ```
 GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
-  notes/PORT_PLAN.md:39: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
-  notes/PORT_PLAN.md:50: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
-  notes/PORT_PLAN.md:54: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
-  notes/PORT_PLAN.md:70: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
-  notes/PORT_PLAN.md:81: empty cell(s) under 'Decision'
+  notes/PORT_PLAN.md:44: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
+  notes/PORT_PLAN.md:55: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
+  notes/PORT_PLAN.md:59: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
+  notes/PORT_PLAN.md:75: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
+  notes/PORT_PLAN.md:86: empty cell(s) under 'Decision'
   ... four more Evaluation-set rows ...
-  notes/PORT_PLAN.md:37: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
+  notes/PORT_PLAN.md:42: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
     at least 3: the leaves, the blocks they compose into, and the whole model.
   notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
   notes/PORT_PLAN.md: 'Target' has 4 unanswered item(s), first is '- Chip generation and card count:'
