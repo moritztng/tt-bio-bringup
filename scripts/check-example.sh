@@ -32,7 +32,8 @@ table() {
 }
 
 fail=0
-check() {   # check <label> <expected-rc> <file>
+check() {   # check <label> <expected-rc> <ignored> <gate args...>
+    # $3 is a decoy kept so the call sites line up visually; the gate arguments start at $4.
     "$PY" "$GATE" "${@:4}" >"$TMP/out" 2>&1
     rc=$?
     if [ "$rc" -eq "$2" ]; then

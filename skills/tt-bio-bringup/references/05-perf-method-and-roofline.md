@@ -175,8 +175,10 @@ best_case_saving  = share_touched * total_time * fraction_of_region_removed
 ```
 
 Worked: a triangle-multiplication module's phase breakdown at N=128 was LN 0.08, projection+gate
-0.74, contraction 0.85, output 0.22 ms. A perfect contraction kernel therefore caps the *module* at
-~1.5x, and after it lands the projection is the new bottleneck. That bound was worth more than the
+0.74, contraction 0.85, output 0.22 ms, so 1.89 ms in total. A perfect contraction kernel leaves
+1.04 ms and therefore caps the *module* at **1.89 / 1.04 = 1.82x**, and after it lands the projection
+at 0.74 of 1.04 ms is the new bottleneck. Do the division; "it is the biggest phase so the win is
+big" is not a bound. That bound was worth more than the
 kernel.
 
 Rules:

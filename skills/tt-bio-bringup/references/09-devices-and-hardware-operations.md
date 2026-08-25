@@ -49,7 +49,9 @@ module and `os.environ.setdefault("TT_VISIBLE_DEVICES", ...)` there, so an expli
   can no longer pin itself. Use `multiprocessing.get_context("spawn")`, never fork: spawned children
   re-execute module top and pick up the per-worker env.
 - A pinned process sees exactly one device, as logical id 0:
-  `TT_VISIBLE_DEVICES=N python3 -c "import ttnn; print(ttnn.GetNumAvailableDevices())"` must print `1`.
+  `TT_VISIBLE_DEVICES=N ./env/bin/python3 -c "import ttnn; print(ttnn.GetNumAvailableDevices())"`
+  must print `1`. Name the venv's interpreter: a bare `python3` outside the venv raises
+  `ModuleNotFoundError: ttnn`, which reads here as "still wedged" and escalates you to a host reboot.
 - **Unset means "the whole box".** The UMD brings up every *visible* chip, not only the one you open:
   `TT_VISIBLE_DEVICES=0,1` reports a 1x1 mesh while the process holds fds on both `/dev/tenstorrent/0` and
   `/1` for its entire lifetime.
@@ -150,7 +152,7 @@ not that the firmware state left behind is openable.
 
 **Verify with a fast canary, never with the slow thing that hung**: a slow reproducer cannot distinguish
 "recovered" from "wedged again" in useful time. Canary =
-`TT_VISIBLE_DEVICES=0 python3 -c "import ttnn; d=ttnn.open_device(device_id=0); ttnn.close_device(d)"`,
+`TT_VISIBLE_DEVICES=0 ./env/bin/python3 -c "import ttnn; d=ttnn.open_device(device_id=0); ttnn.close_device(d)"`,
 then a small known-good end-to-end run whose output you compare against a stored golden.
 
 After killing device processes mid-run the card can leak TLB windows: the next open fails with

@@ -19,6 +19,7 @@ skills/tt-bio-bringup/
   examples/                 one small model from Phase 0 to Phase 6, plus a runnable Phase 1 capture
 agents/                     subagent definitions for five roles: four that work, one that audits
 scripts/redaction-check.sh  the check that keeps this repo publishable
+scripts/check-example.sh    runs the worked example through the gates it prescribes
 ```
 
 The reference documents are the distilled part. They are the accumulated result of porting a series

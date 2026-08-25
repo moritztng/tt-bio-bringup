@@ -14,7 +14,7 @@ was established. Delete what is no longer true rather than appending a correctio
 
 - Chip generation, card count, host:
 - Package versions that matter (ttnn / tt-metal / torch), pinned where:
-  read ttnn's with `python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"`;
+  read ttnn's with `./env/bin/python3 -c "import importlib.metadata as m; print(m.version('ttnn'))"`;
   it has no `__version__` attribute and `tt-metal` is not a distribution name
 - The interpreter each gate runs under ($REF_PY for the capture, ./env/bin/python3 for pytest):
 - The effort bar for this campaign (05-perf-method-and-roofline.md section 1), as two numbers:

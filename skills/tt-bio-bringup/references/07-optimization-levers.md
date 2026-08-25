@@ -101,7 +101,9 @@ itself for a noise floor before quoting a delta.
 ## 3. L1 residency and memory config
 
 **What it is.** Where a tensor lives (DRAM interleaved, L1 interleaved, L1 sharded) and whether a matmul writes its
-result to DRAM or leaves it in L1 for the next op. Blackhole L1 is 1,572,864 B per core; measured DRAM bandwidth through
+result to DRAM or leaves it in L1 for the next op. Blackhole L1 is 1,572,864 B per core as the device reports it, but budget against the allocator's
+1,461,760 B per bank (`08-memory-and-residency.md` §1: sizing on the device number admits configs
+that do not fit on an idle chip); measured DRAM bandwidth through
 ttnn is ~435 GB/s and machine balance at HiFi4 is ~231 FLOP/byte, which almost nothing in a bio model clears. These
 workloads are bandwidth and latency bound, so where the bytes live is the dominant device-side lever.
 

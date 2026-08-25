@@ -27,10 +27,16 @@ Measured on this card with a microbenchmark, not quoted from a datasheet.
 
 ## Op census
 
-| Op | Calls | Device time | Share | Arithmetic intensity | Bound by | Distance to roof |
-|---|---|---|---|---|---|---|
+Two share columns, because Amdahl needs the share of **wall** and a profiler gives you the share of
+**device time**. Using one where the other belongs is the unit slip that
+`05-perf-method-and-roofline.md` §5 records nearly funding a multi-day effort.
 
-Wall clock: . Sum of device time: . Residual (host + dispatch): . Explain the residual.
+| Op | Calls | Device time | Share of device | Share of wall | Arithmetic intensity | Bound by | Distance to roof |
+|---|---|---|---|---|---|---|---|
+
+- Wall clock:
+- Sum of device time:
+- Residual (host + dispatch), and what it is:
 
 ## Levers
 

@@ -267,7 +267,7 @@ Together: **11.1% of fold wall-clock at 768 tokens, 14.2% at 1024**, on a model 
 - Fold every model at a fixed rung set (`256, 512, 640, 768`), baselined per card type in
   `docs/size_ladder_baseline.json` alongside the grid it was measured on. Take exponent intervals over a **sparse**
   subset (`256, 512, 768`): rungs too close together make the exponent a coin flip against noise, and a tolerance
-  wide enough for that noise cannot catch a ~1.4 apparent-exponent cliff.
+  wide enough for that noise cannot catch the ~1.6 apparent-exponent cliff above (N^2.03 to N^3.62).
 - Record per rung **which levers actually fired**, by effect (`served` / `declined` counters), not by config. Fail
   when the fired/dark lever set changes, not only when runtime moves: a run that merely succeeds proves nothing
   about whether the optimised path ran. Discard the first, compile-cold measurement per rung; keeping it inflated

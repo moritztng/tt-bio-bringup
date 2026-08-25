@@ -86,7 +86,8 @@ costs 1.00x-1.02x of native and is the kill gate for the route: if the faithful 
 not match, stop. Only then edit the dataflow. Two traps:
 
 - **Cache the descriptor.** `generic_op` takes the whole program description per call; building it
-  in Python cost ~155 us at one production shape against ~91 us of device time, a 0.47x regression.
+  in Python cost ~155 us at one production shape against ~91 us of device time, so the call went
+  from 91 us to ~246 us, **2.7x slower**, and the op spent more time being described than executed.
   Everything except the buffer addresses is a pure function of (shape, dtype, layout, buffer type,
   core grid): put the addresses in `common_runtime_args`, cache the rest on that tuple, rewrite two
   scalars per call.
@@ -133,7 +134,9 @@ dir; always wrap in `timeout`. Gotchas costing an afternoon each: include
 `"api/dataflow/dataflow_api.h"`, not the bare `"dataflow_api.h"` (the bare include wedged a device);
 `init_sfpu` needs `eltwise_unary/eltwise_unary.h`; call `mm_init` once per invocation and do all
 gating before all matmul, since interleaving forces mode switches that can hang. L1 is about 1.5 MB
-(1,572,864 B) per core; a bf16 32x32 tile is 2048 B, fp32 4096 B. Use `split_work_to_cores` from
+(1,572,864 B) per core as reported, 1,461,760 B per bank as the allocator will actually give you,
+and it is the second you budget against (`08-memory-and-residency.md` §1). A bf16 32x32 tile is
+2048 B, fp32 4096 B. Use `split_work_to_cores` from
 `<tt-metalium/work_split.hpp>` for grid parallelisation.
 
 ### D. A real `ttnn.experimental` op

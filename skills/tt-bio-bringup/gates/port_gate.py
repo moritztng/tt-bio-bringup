@@ -73,8 +73,15 @@ MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
 #: a PREFIX, so "yes - red at 0.712" and "red on commit abc123" are answers, not violations.
 AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed)( as expected)?)\b",
                          re.I)
-#: ...but a negation anywhere in the cell overrides the prefix, so "red herring, no" is rejected.
-NEGATED = re.compile(r"\b(no|not|never|didn'?t|did ?not|pass(ed)?|green|unknown|n/?a)\b", re.I)
+#: ...but a bare negative verdict as its own clause overrides the prefix, so "red herring, no" is
+#: rejected. Scanned clause by clause, not across the whole cell: "yes, red at 0.31 (not a fluke)"
+#: and "yes, went from pass to fail" are answers, and a substring scan rejected both.
+NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)?|green|"
+                              r"unknown|n/?a|none)$", re.I)
+
+
+def negated(cell: str) -> bool:
+    return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!")) for c in re.split(r"[,;()]", cell))
 #: A threshold is a number, or a named exactness criterion.
 #: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
 #: named exactness criterion.
@@ -231,7 +238,7 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 is_verdict = MUST_BE_YES.search(col) or (
                     in_controls_section and i == len(t.header) - 1)
                 if v and is_verdict and (
-                        not AFFIRMATIVE.match(v) or NEGATED.search(v)):
+                        not AFFIRMATIVE.match(v) or negated(v)):
                     problems.append(
                         f"{path}:{n}: {col!r} says {v!r}. This column records that the test FAILED "
                         "when you broke it, so it has to start with yes, red, true or confirmed, "
