@@ -367,8 +367,8 @@ Weights loaded, one forward at L=64, allowed to be slow and allowed to be wrong.
 ```bash
 TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_minifold_weights.py -q
 ./env/bin/python3 scripts/port_gate.py determinism \
-  --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/minifold_port/forward.py --len 64 --out scripts/minifold_port/fw_card${CARD}.npy' \
-  --artifact scripts/minifold_port/fw_card${CARD}.npy
+  --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/minifold_port/forward.py --len 64 --out scripts/minifold_port/fw_card${CARD:?set CARD first}.npy' \
+  --artifact scripts/minifold_port/fw_card${CARD:?set CARD first}.npy
 ```
 
 The weight test asserts a set equality in both directions, not a loop that checks each name it

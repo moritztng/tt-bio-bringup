@@ -277,8 +277,8 @@ this problem.
 ```bash
 TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest tests/test_yourmodel_weights.py -q
 ./env/bin/python3 scripts/port_gate.py determinism \
-    --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/forward.py --len 64 --out scripts/yourmodel_port/fw_card${CARD}.npy' \
-    --artifact scripts/yourmodel_port/fw_card${CARD}.npy
+    --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_port/forward.py --len 64 --out scripts/yourmodel_port/fw_card${CARD:?set CARD first}.npy' \
+    --artifact scripts/yourmodel_port/fw_card${CARD:?set CARD first}.npy
 ```
 
 The weight test asserts set equality, `assert consumed == set(state_dict)`, not a loop over the names
