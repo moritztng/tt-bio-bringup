@@ -29,6 +29,11 @@ you can see is better than a blank you cannot.
 
 Leaf modules first. One row per module. Every row needs a golden.
 
+For a repeated stack, do not write one row per layer. Write the leaves of **one** layer, that layer
+as a whole, and the stack as a whole: the layers are the same code, so four rows prove what forty
+would, and the stack row is what catches a wiring error between them. `Params` is inclusive of
+children, so a block's row counts its own leaves.
+
 | Module | Params | Input shape | Output shape | Golden fixture | Parity threshold | Status |
 |---|---|---|---|---|---|---|
 | | | | | | | not started |
@@ -78,6 +83,10 @@ or Phase 3 stalls three weeks in.
 | The metric, and what a domain expert considers passing | |
 | Licensed for use with this model | |
 | Who curates it | |
+
+Phase 3's gate reads this set from `notes/eval_set.txt`: one input per line, blank lines and
+`#` comments ignored, each line whatever your model takes (a path, a sequence, an accession). Keep
+the ground truth beside it under `notes/eval/` and name the file here.
 
 ## Risks, ranked
 
