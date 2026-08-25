@@ -158,8 +158,12 @@ code can be blamed for any of it. `esmfold2-fast` on purpose: it needs no MSA, s
 on reaching an MSA server. The first run downloads a checkpoint, so it is slow once and fast after. If
 this fails, stop here: nothing downstream is interpretable.
 
-**6. Pin your own reference.** Clone your PyTorch reference implementation, pin the commit, build it
-its own separate virtualenv, and run it once on CPU. Record the exact command and the wall-clock
+**6. Pin your own reference.** Clone your PyTorch reference implementation, pin the commit, and run
+it once on CPU. Install it into `env` alongside tt-bio if its pins are compatible, which is the
+common case and the one the worked example uses; give it **its own** virtualenv the moment a pin
+conflicts, because a silently resolved conflict changes the golden. Record which you did in
+`notes/PORT_STATE.md`: `SKILL.md` Phase 1 calls that interpreter `$REF_PY` and the capture runs
+under it. Record the exact command and the wall-clock
 runtime. Two runs must produce identical output; if they do not, fix that before Phase 1, because a
 reference you cannot reproduce cannot be a golden.
 

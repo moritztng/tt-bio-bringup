@@ -104,7 +104,9 @@ PID=                                                # fill this in; a bare <pid>
 : "${PID:?set PID to the suspect process}"
 ps -o pid,stat,wchan:24,etime -p "$PID"             # Ssl + futex_do_wait
 top -b -n2 -d 1.5 -p "$PID" | tail -3               # 0.0% CPU across 3+ minutes
-find "$RUN_DIR/" -newermt "5 minutes ago" -type f    # nothing = no progress
+RUN_DIR=                                            # fill in; empty makes this `find /`
+: "${RUN_DIR:?set RUN_DIR to the run output directory}"
+find "$RUN_DIR" -newermt "5 minutes ago" -type f    # nothing = no progress
 tt-smi -s | grep -iE '"power"|"aiclk"'              # powered but idle
 ```
 

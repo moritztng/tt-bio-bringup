@@ -14,7 +14,7 @@ Method (floor → screen → predict → build) lives in `05-perf-method-and-roo
 
 | Question | Instrument | Command / knob |
 |---|---|---|
-| Where does model time go? | device profiler ops report, aggregated to an op census | `python -m tracy -r -o OUT --op-support-count N -- /abs/path/script.py` |
+| Where does model time go? | device profiler ops report, aggregated to an op census | `./env/bin/python3 -m tracy -r -o OUT --op-support-count N -- /abs/path/script.py` |
 | Is this op compute- or bandwidth-bound? | roofline microbenchmark for the two roofs, plus this op's `DEVICE KERNEL DURATION` and its own byte/FLOP arithmetic | `scripts/profiling/roofline_bh.py`, then bytes ÷ duration vs FLOPs ÷ duration |
 | Is the host or the device the bottleneck? | bare synced wall clock minus the summed device kernel time; explain the residual with a host trace | `time.perf_counter()` + `ttnn.synchronize_device()`; `py-spy record` / `cProfile` on the same region |
 | Why is the second call cheaper than the first? | run the same shape twice in one process and diff; compile lands in the op-to-op gap, not in a kernel | see §5 warm/cold; `~/.cache/tt-metal-cache` and `enable_program_cache()` |
@@ -220,7 +220,7 @@ Steps 0 and 2 use two harnesses that come with tt-bio, `scripts/profiling/roofli
 `scripts/profiling/graph_capture_probe.py`. They are model-agnostic, so you run them, you do not
 write them. Everything else in this section you point at your own model.
 
-```sh
+```bash
 # 0. Roofs, once per card. Numbers below are Blackhole p150a, measured, for calibration only.
 ./env/bin/python3 scripts/profiling/roofline_bh.py --iters 20 --warmup 5 \
     --mm_sizes 4096 8192 12288      # the defaults stop at 4096 and understate the compute roof

@@ -54,7 +54,7 @@ The census is the ranked list you re-derive after every landed lever. Build it w
 profiler, not host wall-clock, and read `DEVICE KERNEL DURATION [ns]` per op:
 
 ```sh
-python -m tracy -r -o OUT --op-support-count 20000 -- /abs/path/to/your_script.py
+./env/bin/python3 -m tracy -r -o OUT --op-support-count 20000 -- /abs/path/to/your_script.py
 ```
 
 Per op type, record: **total device time, call count, mean per call, share of the whole model.**

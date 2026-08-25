@@ -8,6 +8,7 @@ is not ready to hand out.
 **Definition of done (a command that exits zero only when the deliverable genuinely exists).**
 
 ```bash
+# the one command that decides whether this is done. It must exit 0 only when it is.
 ```
 
 **In scope.** Files, modules, sizes.
@@ -17,6 +18,8 @@ is not ready to hand out.
 **Commands to run.**
 
 ```bash
+# every command the agent needs, in order, with the interpreter named. If you cannot write them
+# here, you do not yet know what you are asking for.
 ```
 
 **Context the agent will not otherwise have.** Prior attempts, known traps, the reason the obvious

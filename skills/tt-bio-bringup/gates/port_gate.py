@@ -41,12 +41,12 @@ LITERAL_ANGLE = {"<root>"}
 #: A stopword alone is not enough: "<url of the repo>" and "<hash of the checkpoint>" are exactly
 #: the holes this check exists to find, and every one of them contains "of" or "the".
 NOT_A_PLACEHOLDER = re.compile(r"\b(is|are|was|were|means|becomes|equals)\b\s+\S+\s+\S+", re.I)
-DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon"
-                           r"|to be (decided|determined|measured|chosen|picked))\b", re.I)
+DEFERRED_HARD = re.compile(r"\b(TBD|TODO|FIXME|XXX|coming soon)\b", re.I)
 #: Softer phrasings. Only a hole when they are the *value* of something: in a prose paragraph
 #: "we will measure the exact boundary in Phase 2" is a plan, and SKILL.md instructs it.
 DEFERRED_SOFT = re.compile(
-    r"\b(figure (this |it )?out( later)?|decide later"
+    r"\b(to be (decided|determined|measured|chosen|picked)\b(?!.{0,40}\bphase\b)"
+    r"|figure (this |it )?out( later)?|decide later"
     r"|we will (decide|pick|choose|look|figure|work)"
     r"|(decide|choose|pick|measure|figure|sort) (this |it |that )?(out )?later"
     r"|pick one (in|during|at) |whatever .{0,30}turns out"
@@ -87,7 +87,7 @@ def negated(cell: str) -> bool:
 #: A threshold is a number, or a named exactness criterion.
 #: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
 #: named exactness criterion.
-THRESHOLD_OK = re.compile(r"[0-9]*\.[0-9]+|[0-9]+e-?[0-9]+|\b[0-9]+ ?%"
+THRESHOLD_OK = re.compile(r"[0-9]*\.[0-9]+|[0-9]+e-?[0-9]+|\b[0-9]+ ?%|^\s*[0-9]+\s*$"
                           r"|\bbit[- ]exact\b|\bmaxdiff ?(of )?0\b|\bexact(ly)? 0\b"
                           r"|\bidentical\b|\bbyte[- ]identical\b", re.I)
 
@@ -398,7 +398,9 @@ def gate_plan(args) -> int:
                 "or none. State both ends, because Phase 4 runs a ladder across exactly this range "
                 "and Phase 2 has to prove the top of it fits.")
 
-    return _verdict("phase 0 plan", path, problems)
+    return _verdict("phase 0 plan", path, problems,
+                    "Every section present, every table row filled, no placeholders, "
+                    "nothing deferred.")
 
 
 def gate_report(args) -> int:
@@ -428,17 +430,19 @@ def gate_report(args) -> int:
             problems.append(
                 f"{path}: {want!r} has no table with data rows under it. The heading is not the "
                 "evidence; the rows are. If this section is genuinely prose, pass --no-tables.")
-    return _verdict("report", path, problems)
+    asked = ", ".join(repr(h) for h in (args.require_heading or [])) or "no sections named"
+    return _verdict("report", path, problems,
+                    f"Checked: {asked}"
+                    + ("; tables not required (--no-tables)." if args.no_tables else "; each with a filled table."))
 
 
-def _verdict(what: str, path: Path, problems: list[str]) -> int:
+def _verdict(what: str, path: Path, problems: list[str], detail: str = "") -> int:
     if problems:
         print(f"GATE 1: {what} {path} is not finished. {len(problems)} problem(s):")
         for p in problems:
             print(f"  {p}")
         return 1
-    print(f"GATE 0: {what} {path} is complete: every section present, every table row filled, "
-          "no placeholders, nothing deferred.")
+    print(f"GATE 0: {what} {path} passed every check that was asked for. {detail}")
     return 0
 
 

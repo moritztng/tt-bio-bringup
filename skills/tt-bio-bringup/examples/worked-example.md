@@ -74,21 +74,29 @@ The template starts red, and it names every hole:
 ```
 GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished. 14 problem(s):
   notes/PORT_PLAN.md:1: unfilled placeholder '<model name>'
-  notes/PORT_PLAN.md:46: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden fixture, Parity threshold'
-  notes/PORT_PLAN.md:57: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range, Tile-multiple handling'
-  notes/PORT_PLAN.md:61: table [torch op | Count in model | ttnn equivalent | Risk] has no data rows
-  notes/PORT_PLAN.md:77: table [Source | How the reference seeds it | How both sides will share draws] has no data rows
+  notes/PORT_PLAN.md:46: empty cell(s) under 'Module, Params, Input shape, Output shape, Golden
+    fixture, Parity threshold'
+  notes/PORT_PLAN.md:57: empty cell(s) under 'Axis, Symbol, Static or dynamic, Range,
+    Tile-multiple handling'
+  notes/PORT_PLAN.md:61: table [torch op | Count in model | ttnn equivalent | Risk] has no data
+    rows. If it is genuinely empty at this phase, say so in a row rather than leaving it blank: a
+    blank table and a forgotten table look identical.
+  notes/PORT_PLAN.md:77: table [Source | How the reference seeds it | How both sides will share
+    draws] has no data rows. If it is genuinely empty at this phase, say so in a row rather than
+    leaving it blank: a blank table and a forgotten table look identical.
   notes/PORT_PLAN.md:88: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:89: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:90: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:91: empty cell(s) under 'Decision'
   notes/PORT_PLAN.md:92: empty cell(s) under 'Decision'
-  notes/PORT_PLAN.md:44: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it needs
-    at least 3: the leaves, the blocks they compose into, and the whole model.
+  notes/PORT_PLAN.md:44: module tree has 1 row(s). Phase 0 is a leaf-first decomposition, so it
+    needs at least 3: the leaves, the blocks they compose into, and the whole model. One row
+    naming the whole model is the thing this phase exists to replace.
   notes/PORT_PLAN.md: 'Reference' has 4 unanswered item(s), first is '- Repository and pinned commit:'
   notes/PORT_PLAN.md: 'Target' has 4 unanswered item(s), first is '- Chip generation and card count:'
   notes/PORT_PLAN.md: the supported size range reads 'Supported size range to ship (state numbers,
-    not "large"):'. That is one number or none. State both ends.
+    not "large"):'. That is one number or none. State both ends, because Phase 4 runs a ladder
+    across exactly this range and Phase 2 has to prove the top of it fits.
 ```
 
 Four sections carry the weight. The rest is bookkeeping.

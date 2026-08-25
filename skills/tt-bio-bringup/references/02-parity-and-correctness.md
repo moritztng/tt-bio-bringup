@@ -320,9 +320,10 @@ if ref16.dtype != torch.bfloat16:
     # fp32. For those modules this instrument measured NOTHING, and reports a perfect score.
     print(f"{name}: autocast kept this in fp32, so the numbers below are not a bf16 envelope")
 
+out_dtype = ref16.dtype                        # record it before the cast, the print uses it
 ref16 = ref16.float()
 envelope = pcc(ref16, ref32)
-maxdiff  = (ref16 - ref32).abs().max().item()
+maxdiff  = (ref16 - ref32).detach().abs().max().item()   # detach, or torch warns on .item()
 exact    = torch.equal(ref16, ref32)
 print(f"{name:24s} dtype={out_dtype} pcc={envelope:.10f} maxdiff={maxdiff:.3e} exact={exact}")
 ```
@@ -341,8 +342,23 @@ For a module autocast skipped, either gate it as part of the enclosing block tha
 or measure it explicitly:
 
 ```python
+import copy
+
+def to_bf16(x):
+    """Round float leaves to bf16, leave ids and masks alone. Same shape as _to_cpu above."""
+    if torch.is_tensor(x):
+        return x.to(torch.bfloat16) if x.is_floating_point() else x
+    if isinstance(x, dict):
+        return {k: to_bf16(v) for k, v in x.items()}
+    if isinstance(x, tuple) and hasattr(x, "_fields"):
+        return type(x)(*(to_bf16(v) for v in x))
+    if isinstance(x, (list, tuple)):
+        return type(x)(to_bf16(v) for v in x)
+    return x
+
 mod16 = copy.deepcopy(mod).to(torch.bfloat16).eval()
-ref16 = leaf(mod16(*to_bf16(args), **to_bf16(kwargs))).float()
+with torch.no_grad():
+    ref16 = leaf(mod16(*to_bf16(args), **to_bf16(kwargs))).float()
 ```
 
 That is an **upper bound**, not the device's regime: it rounds the accumulation too, where the

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # The worked example claims its tables pass the gates it prescribes. This checks that they do.
 #
+# Scope, stated because the label on a check has to match what it measured: the TABLES and the
+# pasted gate output come from the example. The plan's six prose sections (Reference, Target,
+# Control flow, Host-side pipelines, and the two below) are written here, because the example
+# presents those as narrative rather than as a filled-in plan. So a green run means "every table
+# the example shows is accepted by the gate that judges it, and the output it pastes is the
+# output that gate produces". It does not mean the example contains a complete plan.
+#
 # Why it exists: the example is the highest-trust document here, a reader copies its shape, and
 # nothing tied its tables to the gate that judges them. A cold read found four of them rejected by
 # the gates the same document tells you to run. That is this repository's own headline defect,
@@ -186,7 +193,45 @@ blk = t[i:t.find("```", i)] if i >= 0 else ""
 print(" ".join(sorted(set(re.findall(r"PORT_PLAN\.md:(\d+):", blk)), key=int)))
 PYEOF
 )
-if [ "$live_n" = "$doc_n" ] && [ "$live_l" = "$doc_l" ]; then
+# The problem TEXT too, not only the count and the line numbers. Rewriting a pasted problem into
+# something the gate never says used to pass, and three of the pasted problems carry no line
+# number at all, so they were unchecked entirely. Both texts go through FILES, not through shell
+# interpolation: the gate's own messages contain quotes, and interpolating them into a Python
+# string is how the first version of this check produced a false failure.
+"$PY" - "$EX" "$TMP/live" > "$TMP/textdiff" <<'PYEOF'
+import re, sys
+
+def joined(lines):
+    out = []
+    for line in lines:
+        if line.startswith("    ") and out:      # a wrapped continuation of the line above
+            out[-1] += " " + line.strip()
+        elif line.startswith("  "):
+            out.append(line[2:].rstrip())
+    return out
+
+doc_text = open(sys.argv[1]).read()
+i = doc_text.find("GATE 1: phase 0 plan notes/PORT_PLAN.md is not finished.")
+doc = joined(doc_text[i:doc_text.find("```", i)].splitlines()[1:]) if i >= 0 else []
+live = joined(open(sys.argv[2]).read().splitlines()[1:])
+
+# The live run reads the template, the example pastes notes/PORT_PLAN.md. Same document, two
+# paths, so normalise the prefix away before comparing the message itself.
+def norm(s):
+    s = re.sub(r"\S*PORT_PLAN\.md", "PLAN", s)
+    return re.sub(r"\s+", " ", s).strip().rstrip(".")
+live_n = [norm(l) for l in live]
+for d in doc:
+    if d.strip().startswith("..."):              # a deliberate elision, not a claim
+        continue
+    if not any(norm(d) in l for l in live_n):
+        print(d)
+PYEOF
+if [ -s "$TMP/textdiff" ]; then
+    printf '  FAIL  the example pastes problem text the gate does not produce:\n'
+    sed 's/^/          /' "$TMP/textdiff"
+    fail=1
+elif [ "$live_n" = "$doc_n" ] && [ "$live_l" = "$doc_l" ]; then
     printf '  ok    pasted gate output still matches a live run (%s problems, lines %s)\n' "$live_n" "$live_l"
 else
     printf '  FAIL  pasted gate output is stale.\n'
