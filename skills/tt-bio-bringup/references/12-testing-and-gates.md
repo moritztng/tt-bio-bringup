@@ -92,7 +92,7 @@ Key comparability on the commit the dependency was built from, proven with `git 
 A release gate launched with the system `python3` gates whatever `ttnn` is on that interpreter's
 path, not what `pyproject.toml` pins. One such run had two legs read high enough to fail a release
 as numerics drift on a difference that was never code. Fix: a preflight refusing to start unless
-`ttnn.__version__` matches the pin, and printing it; launch through the release venv's
+`importlib.metadata.version("ttnn")` matches the pin, and printing it; launch through the release venv's
 `sys.executable` with `PYTHONPATH` at the tag tree, so your code is under test while the dependency
 comes from the pinned venv. A bare `python3` in a release runbook is a red flag.
 

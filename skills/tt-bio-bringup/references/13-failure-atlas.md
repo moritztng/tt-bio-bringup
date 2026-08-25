@@ -777,8 +777,10 @@ measured-vs-model gap as a real inefficiency.
 **Mechanism.** A gate script launched with the system `python3` picks up whatever ttnn is on that
 interpreter's path, not the version pinned in `pyproject.toml`. Under the wrong wheel two accuracy
 legs read high enough to fail a release on a difference that was never code.
-**Check.** `python -c "import ttnn; print(ttnn.__version__)"` under the exact interpreter the gate
-runs, and compare against the pin.
+**Check.** `python -c "import importlib.metadata as m; print(m.version('ttnn'))"` under the exact
+interpreter the gate runs, compared against the pin. Read it from the package metadata, not from a
+`ttnn.__version__` attribute: `ttnn` does not define one, and the metadata lookup answers without
+importing the package, which takes seconds.
 **Fix.** Launch via the release venv's `sys.executable` with `PYTHONPATH` pointed at the tag tree,
 so `tt_bio` stays the code under test while `ttnn` comes from the pinned venv.
 **Guard.** A bare `python3` in a release runbook is a red flag.
