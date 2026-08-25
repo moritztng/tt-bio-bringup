@@ -30,6 +30,10 @@ PATTERNS=(
   'internal host|\bqb[0-9]\b|quietbox|\bttuser\b|\.local\b|bmc'
   'email address|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
   'personal name|moritz(?!tng)|thuening|thüning'
+  'internal project name|japanfold|\baiand\b|tt-boltz|kisoji'
+  'non-public git remote|git@(?!github\.com)[a-z0-9][a-z0-9.-]*[:/]|\b(gitlab|bitbucket)\.[a-z]|\bgit\+ssh://'
+  'money or budget|\$[0-9]{2,}|\$[0-9]+[.,][0-9]|\$[0-9]+ ?(k|m|bn|million|billion)\b|\bUSD ?[0-9]|\bheadcount\b|\b[0-9]+ (FTE|engineers)\b'
+  'schedule or commitment|\bQ[1-4] 20[0-9]{2}\b|by end of (Q[1-4]|January|February|March|April|May|June|July|August|September|October|November|December)|\bdeadline\b|\bship date\b'
 )
 
 fail=0
@@ -40,6 +44,7 @@ for entry in "${PATTERNS[@]}"; do
     | xargs -0 grep -InPi -- "$rx" 2>/dev/null \
     | grep -vE '^(./)?scripts/redaction-check\.sh:' \
     | grep -vi 'github\.com/moritztng' \
+    | grep -vi 'git@github\.com' \
     | grep -vi 'example\.com' )
   if [ -n "$hits" ]; then
     echo "REDACTION HIT [$label]"
