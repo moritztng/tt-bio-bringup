@@ -86,8 +86,10 @@ def verdict_column(header: str, in_controls: bool) -> bool:
     return bool(MUST_BE_YES.search(header) or (in_controls and VERDICT_WORD.search(header)))
 #: "pass" is not an answer here: the column records that the test FAILED when broken. Matched as
 #: a PREFIX, so "yes - red at 0.712" and "red on commit abc123" are answers, not violations.
-AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed)( as expected)?)\b",
-                         re.I)
+#: The trailing \b is why ✓ and ✔ never matched: a word boundary after a non-word character needs
+#: a word character next, so "✓ red" and a bare "✓" were both refused by a regex advertising them.
+AFFIRMATIVE = re.compile(r"^(?:yes|y|red|true|confirmed|went red|fail(?:s|ed)(?: as expected)?)\b"
+                         r"|^[✓✔]", re.I)
 #: ...but a bare negative verdict as its own clause overrides the prefix, so "red herring, no" is
 #: rejected. Scanned clause by clause, not across the whole cell: "yes, red at 0.31 (not a fluke)"
 #: and "yes, went from pass to fail" are answers, and a substring scan rejected both.
@@ -118,8 +120,14 @@ VERDICT_MAX = 40
 VERDICT_WORD_OK = re.compile(
     r"^(?:red|green|pass(?:ing|ed|es)?|fail(?:s|ed|ing|ure)?|"
     r"pcc|maxdiff|rmsd|mae|diff|delta|tol|atol|rtol|sigma|abs|rel|exit|code|"
-    r"at|to|from|on|commit|then|now|went|fell|drop(?:ped|s)?|rose|jumped|and|nan|inf"
+    r"at|to|from|on|in|for|of|vs|both|all|each|and|then|now|commit|seed|seeds|"
+    r"step|steps|row|rows|test|tests|case|cases|run|runs|"
+    r"went|fell|drop(?:ped|s)?|rose|jumped|nan|inf"
     r")$", re.I)
+#: A test id, a path or a symbol. Naming the test that went red is detail worth having, and an
+#: identifier is distinguishable from prose: it carries an underscore, a separator or a file
+#: extension, which "injected", "skipped" and "needed" do not.
+VERDICT_CODE_OK = re.compile(r"[_/]|::|\.(?:py|pt|pth|json|npz|npy|md|sh|cpp|h)$|^`.+`$", re.I)
 #: A number, a scientific-notation number, a percentage, or a commit-shaped hash.
 VERDICT_NUM_OK = re.compile(r"^(?:[0-9][0-9a-fx.eE+_-]*%?|[0-9a-f]{6,}|[<>=~+-]|%)$", re.I)
 #: Naming the transition is the most informative thing a verdict can do, so "green -> red" and
@@ -139,9 +147,22 @@ def verdict_problem(cell: str) -> str | None:
         return ("does not start with an affirmative. This column records that the test FAILED "
                 "when you broke it, so it has to start with yes, red, true or confirmed.")
     rest = AFFIRMATIVE.sub("", cell, count=1)
+    nums = []
     for tok in re.split(r"[\s,;:()\[\]/]+|->|\u2192", rest):
         tok = tok.strip(".!\u2013\u2014")
-        if not tok or VERDICT_NUM_OK.match(tok) or VERDICT_WORD_OK.match(tok):
+        if not tok:
+            continue
+        # Classify before measuring. Scanning the whole cell for digits read the 0 out of
+        # `blocks.0.ffn` and called the verdict a zero.
+        if VERDICT_CODE_OK.search(tok):
+            continue
+        if VERDICT_NUM_OK.match(tok):
+            try:
+                nums.append(float(tok.rstrip("%")))
+            except ValueError:
+                pass
+            continue
+        if VERDICT_WORD_OK.match(tok):
             continue
         return (f"contains {tok!r}. Past the affirmative this column takes numbers and words that "
                 "measure or name the transition (pcc, maxdiff, red, green -> red, at, commit). "
@@ -152,6 +173,17 @@ def verdict_problem(cell: str) -> str | None:
                  r"\b(?:red|fail(?:s|ed|ing|ure)?)\b", rest, re.I):
         return ("names the same state on both sides of the transition, so nothing moved. A control "
                 "that was already red before the break proves nothing about the break.")
+    # A number is only evidence if it moved. "yes, maxdiff 0" says the injected fault changed
+    # nothing, "yes, exit code 0" says the check passed, and "yes, pcc 1.0" says the two sides are
+    # identical: each is the control NOT firing, spelled with a digit. The previous version
+    # accepted all of them, and "y, 0" as well, because a digit matched the number token.
+    if any(n == 0.0 for n in nums):
+        return ("names a zero. A zero difference, a zero exit code and a zero count are the "
+                "control NOT firing: they say the injected fault changed nothing. Record the "
+                "value the broken run actually produced.")
+    if re.search(r"\bpcc\b", rest, re.I) and any(n == 1.0 for n in nums):
+        return ("says the PCC is 1. That is the two sides agreeing, which is what a control that "
+                "did not fire looks like. Record the PCC the broken run produced.")
     g, r = GREENISH.search(rest), REDDISH.search(rest)
     if g and not (r and r.start() > g.start()):
         return ("names a green or passing state with no red one after it. A control that did not "
@@ -783,8 +815,8 @@ EXISTENCE_ONLY = re.compile(
     r"^\s*(?:test|\[\[?)\s+!?\s*-[efsrwxdLhpSGONk]\s+\S+\s*\]?\]?\s*$"
     # Reading a file and throwing the bytes away asks the same question in a longer way, and
     # SKILL.md names it in the same breath as `test -f`. It was not implemented.
-    r"|^\s*(?:cat|head|tail|wc|stat|ls|file)\s+[^|;&]*>\s*/dev/null\s*$"
-    r"|^\s*(?:cat|head|tail)\s+\S+\s*$", re.I)
+    r"|^\s*(?:cat|head|tail|wc|stat|ls|file)\s+[^|;&]*>\s*/dev/null(?:\s+2>&1)?\s*;?\s*$"
+    r"|^\s*(?:cat|head|tail)\s+\S+\s*;?\s*$", re.I)
 
 
 def gate_prove_red(args) -> int:
@@ -872,100 +904,107 @@ def gate_prove_red(args) -> int:
         return _bail("GATE 2: the break command exited non-zero. Whatever it did or did not "
                      "inject, this run says nothing about the check.")
 
-    # An exit code is not an edit. `sed -i s/pattern/x/` exits 0 when the pattern does not
-    # match, and a stale break command is the usual reason this check reads backwards: nothing
-    # was injected, the gate stayed green, and the gate got blamed for it.
-    if watched:
-        now = _fingerprint(watched)
-        unchanged = [q for q in watched if was[q] == now[q]]
-        if unchanged:
-            changed = [q for q in watched if q not in unchanged]
-            return _bail(
-                f"GATE 2: the break command exited 0 but did not change "
-                f"{', '.join(unchanged)}. Usually the pattern no longer matches the file."
-                + (f" It did change {', '.join(changed)}, so something was injected and this run "
-                   "still says nothing about the check." if changed
-                   else " Nothing was injected."))
-    # Deleting the thing under test is not injecting a fault into it. The fingerprint above
-    # counts a vanished file as "changed", which is true and useless: the check then fails
-    # because there is nothing to check.
-    if watched:
-        gone = [q for q in watched if was[q] is not None and not Path(q).is_file()]
-        if gone:
-            return _bail(
-                f"GATE 2: the break removed {', '.join(gone)} rather than changing it, so it is "
-                "not on disk right now. A check that fails because the file is missing has not "
-                "been shown to fail on a defect. Edit the file, do not move it.")
+    # Everything past this point runs with the fault injected, so every exit has to go through
+    # _bail. A CannotRead raised here (the break chmod'd a watched file to 000, say) unwound
+    # straight to main(), which printed GATE 2 and exited with the fault still in the tree.
 
-    # A file the check reads, changed by the break, and not declared.
-    moved = [q for q in check_paths if _fingerprint([q])[q] != check_before[q]]
-    if moved:
-        print(f"GATE 2: the break changed {', '.join(moved)}, which your check reads, and you did "
-              "not list it in --expect-change.")
-        print("  Either that is the file you meant to break, in which case declare it and the\n"
-              "  deleted-rather-than-edited guard applies to it, or the break is touching\n"
-              "  something it should not and the red you are about to see is not the red you\n"
-              "  think it is.")
-        _sh(args.restore)
-        return 2
+    try:
+        # An exit code is not an edit. `sed -i s/pattern/x/` exits 0 when the pattern does not
+        # match, and a stale break command is the usual reason this check reads backwards: nothing
+        # was injected, the gate stayed green, and the gate got blamed for it.
+        if watched:
+            now = _fingerprint(watched)
+            unchanged = [q for q in watched if was[q] == now[q]]
+            if unchanged:
+                changed = [q for q in watched if q not in unchanged]
+                return _bail(
+                    f"GATE 2: the break command exited 0 but did not change "
+                    f"{', '.join(unchanged)}. Usually the pattern no longer matches the file."
+                    + (f" It did change {', '.join(changed)}, so something was injected and this run "
+                       "still says nothing about the check." if changed
+                       else " Nothing was injected."))
+        # Deleting the thing under test is not injecting a fault into it. The fingerprint above
+        # counts a vanished file as "changed", which is true and useless: the check then fails
+        # because there is nothing to check.
+        if watched:
+            gone = [q for q in watched if was[q] is not None and not Path(q).is_file()]
+            if gone:
+                return _bail(
+                    f"GATE 2: the break removed {', '.join(gone)} rather than changing it, so it is "
+                    "not on disk right now. A check that fails because the file is missing has not "
+                    "been shown to fail on a defect. Edit the file, do not move it.")
 
-    print(f"--- check, with the fault injected: {args.check}")
-    broken = _sh(args.check)
-
-    print(f"--- restore: {args.restore}")
-    restore_rc = _sh(args.restore)
-    print(f"--- check, restored: {args.check}")
-    after = _sh(args.check)
-
-    if restore_rc != 0 or after != 0:
-        print(f"GATE 2: restore exited {restore_rc} and the restored check exits {after}. "
-              "Your tree may still hold the injected fault. Fix that before reading the result.")
-        return 2
-
-    # The rule applied to the break, applied to the restore: an exit code is not an edit. A
-    # restore that exits 0 and leaves the file changed would otherwise print GATE 0 and hand
-    # back a dirty checkout, with the green coming from a tree nobody meant to ship.
-    if watched:
-        final = _fingerprint(watched)
-        dirty = [q for q in watched if was[q] != final[q]]
-        if dirty:
-            print(f"GATE 2: the check went red and back to green, but {', '.join(dirty)} no "
-                  "longer matches what it was before the break. The restore exited 0 without "
-                  "fully undoing the edit, so your tree is dirty and this green is not about "
-                  "the tree you started with.")
+        # A file the check reads, changed by the break, and not declared.
+        moved = [q for q in check_paths if _fingerprint([q])[q] != check_before[q]]
+        if moved:
+            print(f"GATE 2: the break changed {', '.join(moved)}, which your check reads, and you did "
+                  "not list it in --expect-change.")
+            print("  Either that is the file you meant to break, in which case declare it and the\n"
+                  "  deleted-rather-than-edited guard applies to it, or the break is touching\n"
+                  "  something it should not and the red you are about to see is not the red you\n"
+                  "  think it is.")
+            _sh(args.restore)
             return 2
-    if broken == 0:
-        print("GATE 1: the check stayed green with the fault injected.")
-        if not watched:
-            print("  First confirm the break actually edited something. A `sed -i` whose pattern no\n"
-                  "  longer matches exits 0 having changed nothing, and that reads identically to\n"
-                  "  this. Re-run with --expect-change <the file you meant to edit>.")
-        print("  If the injection was real, the check is decoration. Find out what it asserts:\n"
-              "  existence instead of content, a committed verdict re-read instead of recomputed,\n"
-              "  the installed package instead of your checkout, or an inverted exit status.")
-        return 1
-    expected = args.red_exit
-    if expected is not None and broken != expected:
-        print(f"GATE 1: with the fault injected the check exits {broken}, and you said its "
-              f"failure code is {expected}. Whatever {broken} means here, it is not this check "
-              "reporting a defect.")
-        return 1
-    if expected is None and broken in CANNOT_RUN:
-        print(f"GATE 2: with the fault injected the check exits {broken}, which means it did not "
-              f"run: {CANNOT_RUN[broken]}.")
-        print("  A check that cannot run is not a check that failed. Injecting a fault that stops\n"
-              "  the check from starting proves nothing about what it asserts, and this is the\n"
-              "  most common way a prove-red run reads green while measuring nothing.")
-        print("  Break the code under test, not the harness. If this exit code really is how your\n"
-              f"  check reports a defect, say so with --red-exit {broken}.")
-        return 2
-    print(f"GATE 0: green (0) -> fault injected -> red ({broken}) -> restored -> green (0). "
-          "This check can fail, so its green means something.")
-    return 0
+
+        print(f"--- check, with the fault injected: {args.check}")
+        broken = _sh(args.check)
+
+        print(f"--- restore: {args.restore}")
+        restore_rc = _sh(args.restore)
+        print(f"--- check, restored: {args.check}")
+        after = _sh(args.check)
+
+        if restore_rc != 0 or after != 0:
+            print(f"GATE 2: restore exited {restore_rc} and the restored check exits {after}. "
+                  "Your tree may still hold the injected fault. Fix that before reading the result.")
+            return 2
+
+        # The rule applied to the break, applied to the restore: an exit code is not an edit. A
+        # restore that exits 0 and leaves the file changed would otherwise print GATE 0 and hand
+        # back a dirty checkout, with the green coming from a tree nobody meant to ship.
+        if watched:
+            final = _fingerprint(watched)
+            dirty = [q for q in watched if was[q] != final[q]]
+            if dirty:
+                print(f"GATE 2: the check went red and back to green, but {', '.join(dirty)} no "
+                      "longer matches what it was before the break. The restore exited 0 without "
+                      "fully undoing the edit, so your tree is dirty and this green is not about "
+                      "the tree you started with.")
+                return 2
+        if broken == 0:
+            print("GATE 1: the check stayed green with the fault injected.")
+            if not watched:
+                print("  First confirm the break actually edited something. A `sed -i` whose pattern no\n"
+                      "  longer matches exits 0 having changed nothing, and that reads identically to\n"
+                      "  this. Re-run with --expect-change <the file you meant to edit>.")
+            print("  If the injection was real, the check is decoration. Find out what it asserts:\n"
+                  "  existence instead of content, a committed verdict re-read instead of recomputed,\n"
+                  "  the installed package instead of your checkout, or an inverted exit status.")
+            return 1
+        expected = args.red_exit
+        if expected is not None and broken != expected:
+            print(f"GATE 1: with the fault injected the check exits {broken}, and you said its "
+                  f"failure code is {expected}. Whatever {broken} means here, it is not this check "
+                  "reporting a defect.")
+            return 1
+        if expected is None and broken in CANNOT_RUN:
+            print(f"GATE 2: with the fault injected the check exits {broken}, which means it did not "
+                  f"run: {CANNOT_RUN[broken]}.")
+            print("  A check that cannot run is not a check that failed. Injecting a fault that stops\n"
+                  "  the check from starting proves nothing about what it asserts, and this is the\n"
+                  "  most common way a prove-red run reads green while measuring nothing.")
+            print("  Break the code under test, not the harness. If this exit code really is how your\n"
+                  f"  check reports a defect, say so with --red-exit {broken}.")
+            return 2
+        print(f"GATE 0: green (0) -> fault injected -> red ({broken}) -> restored -> green (0). "
+              "This check can fail, so its green means something.")
+        return 0
 
 
-# ----------------------------------------------------------------------------- main
+    # ----------------------------------------------------------------------------- main
 
+    except CannotRead as e:
+        return _bail(f"GATE 2: {e}")
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])

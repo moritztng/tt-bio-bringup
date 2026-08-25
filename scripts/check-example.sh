@@ -321,17 +321,33 @@ def literals(head):
     return None
 
 CASES = [
+    ("GATE 1: {what} {path} is not finished",     "GATE 1: phase 0 plan"),
+    ("GATE 0: {what} {path} passed",              "GATE 0: phase 0 plan"),
     ("GATE 0: {what} {path} passed",              "GATE 0: report"),
     ("GATE 1: {len(differing)} artifact(s)",      "GATE 1: 1 artifact(s) changed"),
+    ("GATE 0: {len(artifacts)} artifact(s) byte", "GATE 0: 1 artifact(s) byte-identical"),
     ("GATE 0: green (0) -> fault injected",       "GATE 0: green (0)"),
 ]
 bad = 0
+# Every GATE line in the example has to be covered by a case. Skipping an uncovered prefix meant
+# two of the five distinct pasted outputs were compared against nothing while the leg printed
+# "ok": reword either side of GATE 0: N artifact(s) byte-identical and nothing noticed.
+raw = open(sys.argv[1]).read()
+covered = [prefix for _, prefix in CASES]
+for line in raw.splitlines():
+    s = line.strip()
+    if s.startswith("GATE ") and not any(s.startswith(c) for c in covered):
+        print(f"  FAIL  the example pastes a GATE line no case covers, so nothing checks it:")
+        print(f"          {s[:90]}")
+        bad = 1
 for head, prefix in CASES:
     words = literals(head)
     if not words:
         print(f"  FAIL  no source wording found for {prefix!r} in port_gate.py"); bad = 1; continue
     if prefix not in doc:
-        continue                      # the example does not paste this one
+        print(f"  FAIL  no line starting {prefix!r} in the example, so this case checked nothing.")
+        bad = 1
+        continue
     for w in words:
         if w not in doc:
             print(f"  FAIL  the example's {prefix!r} output is missing wording the gate produces:")

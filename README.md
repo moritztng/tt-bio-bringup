@@ -17,7 +17,7 @@ skills/tt-bio-bringup/
   templates/                the documents the workflow expects you to keep
   gates/port_gate.py        the gate checker the phases call, standard library only
   examples/                 one small model from Phase 0 to Phase 6, plus a runnable Phase 1 capture
-agents/                     subagent definitions for five roles: four that work, one that audits
+agents/                     subagent definitions for five roles: three that work, two that audit
 scripts/redaction-check.sh  the check that keeps this repo publishable
 scripts/check-example.sh    runs the worked example through the gates it prescribes
 ```

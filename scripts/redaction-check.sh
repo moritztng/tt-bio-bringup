@@ -9,6 +9,11 @@
 # and it is the case this script got wrong once: `git ls-files` alone lists tracked files only,
 # so the scan silently narrowed to the index and reported clean while seeing nothing new.
 set -u
+# Byte semantics everywhere. In a UTF-8 locale PCRE gives up on a line containing an invalid byte,
+# and sed does too, so a path or a line holding one was silently not matched while the summary
+# counted it: "we\xffird-a@b.com.md" scanned clean beside an identically shaped valid name that hit.
+LC_ALL=C
+export LC_ALL
 # Resolve the script's own directory to an absolute path BEFORE the cd. Both are derived from
 # "$(dirname "$0")", and when $0 is relative the second one resolves against the NEW cwd: run
 # this from inside scripts/ and redaction-local.txt was looked for at ../scripts/, not found,

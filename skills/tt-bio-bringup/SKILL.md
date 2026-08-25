@@ -325,20 +325,25 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_p
     --require-heading "Component parity" --require-heading "Negative controls"
 ```
 
-The report arm is why the parity template has a negative-controls table. It checks five things and
-you should know which: the section exists, it holds a table with rows in it, no cell is blank or
-bare punctuation, every "Went red?" cell is **under 40 characters**, and within that it starts with
-an affirmative (`yes`, `red`, `true`, `confirmed`, `went red`) and does not also say green, passed,
-identical or unchanged. So `yes - red at 0.712`, `yes, maxdiff 6.25` and `red on commit abc123` are
-answers; `pass`, `green`, `not yet` and `red herring, no` are not.
+The report arm is why the parity template has a negative-controls table. The "Went red?" column is
+checked as a **closed field**, not read as English. It must be under 40 characters, start with an
+affirmative (`yes`, `red`, `true`, `confirmed`, `went red`), and past that hold only three kinds of
+token: a number, a word that measures or names the transition (`pcc`, `maxdiff`, `red`, `green`,
+`at`, `to`, `from`, `in`, `vs`, `fell`, `dropped`), or an identifier (`test_ffn.py`, `blocks.0.ffn`,
+a commit hash). Two shapes are rejected even though every token is legal: a green or passing state
+with no red one after it (`red -> red` says nothing moved), and a zero (`maxdiff 0`, `exit code 0`,
+`pcc 1.0` all say the injected fault changed nothing).
 
-The length limit is the deliberate part. The gate does not read English, and when it tried, it
-rejected `yes, red - pcc dropped 0.999 to 0.31; the restore did not leave the tree dirty`, where the
-"did not" is about the restore, while accepting `yes, the gate passed; maxdiff 3e-4`, where a metric
-in the cell supplied an alibi for a sentence that says the control never fired. Both errors come
-from subordinate clauses, and 40 characters has no room for one. Write the verdict here and the
-explanation in a column of its own; a cell over the limit is returned with that instruction rather
-than judged for truth.
+So `yes`, `yes - red at 0.712`, `yes, green -> red`, `yes, red in test_ffn.py` and
+`confirmed, PCC fell to 0.31` are answers. `pass`, `green`, `not yet`, `red herring, no`,
+`yes, no fault injected` and `yes, maxdiff 0` are not.
+
+Anything else is not called a lie. It comes back with "put it in a Notes column", which is why the
+template has one. That is deliberate: two earlier versions of this check tried to decide whether a
+sentence was true, and both got it wrong in both directions, rejecting
+`yes, red - pcc dropped 0.999 to 0.31; the restore did not leave the tree dirty` while accepting
+`yes, the gate passed; maxdiff 3e-4`. Whether a cell is a verdict is decidable. Whether a sentence
+is true is not, so the gate stopped pretending and the sentence goes where a person reads it.
 
 What none of this checks is whether you actually ran the injection. `port_gate.py prove-red` is what
 makes that true: it runs the break, runs your check, and reads the exit code. The table is where you
