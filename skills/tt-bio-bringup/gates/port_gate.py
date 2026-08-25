@@ -51,14 +51,21 @@ VAGUE_CELL = re.compile(
     r"|maybe|probably|roughly|approx|\?+|-+|\.+|etc\.?|see above|as needed|standard|default)$", re.I)
 #: A named golden is a file or a path, not a promise. Accept an explicit exactness note too.
 GOLDEN_OK = re.compile(r"[\w/.-]+\.(pt|pth|npz|npy|json|safetensors|h5|pkl)\b"
-                       r"|[\w-]+/[\w./-]+"
+                       r"|[\w.-]+/[\w.-]+/[\w./-]+"
                        r"|\bnone needed\b", re.I)
+#: A path-shaped answer that is really a shrug. "n/a" reads as a directory to a loose regex.
+GOLDEN_NOT_OK = re.compile(r"^(n/?a|na|none|-+|\?+|tbd/.*|todo/.*)$", re.I)
 #: Columns whose whole purpose is to record that something failed on purpose.
 MUST_BE_YES = re.compile(r"went red|goes red|red\?|fails\?|did it fail", re.I)
-AFFIRMATIVE = re.compile(r"\s*(yes|y|red|true|✓|✔|pass(ed)?|confirmed|went red)\b.*", re.I)
+#: "pass" is not an answer here: the column records that the test FAILED when broken.
+AFFIRMATIVE = re.compile(r"(yes|y|red|true|✓|✔|confirmed|went red|failed as expected)"
+                         r"(\s*[,(].*)?", re.I)
 #: A threshold is a number, or a named exactness criterion.
-THRESHOLD_OK = re.compile(r"[0-9]"
-                          r"|\bbit[- ]exact\b|\bmaxdiff\b|\bexact\b|\bidentical\b", re.I)
+#: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
+#: named exactness criterion.
+THRESHOLD_OK = re.compile(r"[0-9]*\.[0-9]+|[0-9]+e-?[0-9]+|\b[0-9]+ ?%"
+                          r"|\bbit[- ]exact\b|\bmaxdiff ?(of )?0\b|\bexact(ly)? 0\b"
+                          r"|\bidentical\b|\bbyte[- ]identical\b", re.I)
 
 
 # --------------------------------------------------------------------------- report
@@ -176,7 +183,9 @@ def _section(text: str, name: str) -> str | None:
     """The body of the ``## <name>`` section, up to the next heading of the same level."""
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        if re.fullmatch(rf"#+\s*{re.escape(name)}\s*", line.strip(), re.I):
+        # Substring, matching how required headings are checked. "## Target hardware" must
+        # not satisfy the heading check and then silently skip this section's own checks.
+        if re.match(rf"#+\s*{re.escape(name)}\b", line.strip(), re.I):
             body = []
             for nxt in lines[i + 1:]:
                 if nxt.startswith("#" * line.count("#", 0, 6)) and nxt.lstrip("#").strip():
@@ -231,7 +240,7 @@ def gate_plan(args) -> int:
                 i = cols.get(key)
                 return row[i].strip(" *`") if i is not None and i < len(row) else ""
             mod, golden, thresh = cell("module"), cell("golden"), cell("threshold")
-            if golden and not GOLDEN_OK.search(golden):
+            if golden and (GOLDEN_NOT_OK.match(golden) or not GOLDEN_OK.search(golden)):
                 problems.append(
                     f"{path}:{n}: module {mod!r} names its golden as {golden!r}, which is not a "
                     "fixture. Name the file the test will load, or say 'none needed' and why.")
@@ -239,6 +248,28 @@ def gate_plan(args) -> int:
                 problems.append(
                     f"{path}:{n}: module {mod!r} has threshold {thresh!r}, which has no number in "
                     "it. A threshold is a number, or a named exactness criterion like 'maxdiff 0'.")
+
+    # Four required sections are prose, not tables, and nothing checked them: the pinned
+    # commit, the checkpoint hash, the CPU command and the nondeterminism note that Phase 1's
+    # golden depends on. The gate printed "every section present" over four empty ones.
+    for name in ("Reference", "Target", "Control flow", "Host-side pipelines", "Randomness",
+                 "Risks"):
+        body = _section(text, name)
+        if body is None:
+            continue                      # already reported as a missing heading
+        stripped = strip_code_blocks(body)
+        bullets = [l for l in stripped.splitlines() if re.match(r"\s*[-*]\s", l)]
+        empty = [l.strip() for l in bullets if re.match(r"\s*[-*]\s*[^:]{1,80}:\s*$", l)]
+        if empty:
+            problems.append(f"{path}: {name!r} has {len(empty)} unanswered item(s), "
+                            f"first is {empty[0]!r}")
+        # A table is content too: Randomness is legitimately a table and no prose.
+        content = [l for l in stripped.splitlines()
+                   if l.strip() and not l.startswith("#")
+                   and not re.fullmatch(r"\|[\s|:-]*\|", l.strip())]
+        if not content:
+            problems.append(f"{path}: {name!r} is empty. It is one of the sections this gate "
+                            "says is present, so it has to say something.")
 
     target = _section(text, "target")
     if target is None:
