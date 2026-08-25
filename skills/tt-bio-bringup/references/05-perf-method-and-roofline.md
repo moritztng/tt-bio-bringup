@@ -358,7 +358,8 @@ A number without these is an anecdote. Refuse to publish or act on one missing a
 - **Shape**: sequence length / atom count / batch, and the exact fixture file.
 - **dtype and fidelity**: bf16/fp32, LoFi/HiFi2/HiFi4, `fp32_dest_acc` on or off.
 - **Warm or cold**, stated explicitly, with what was excluded (model load, first compile).
-- **N runs, the median, and the spread**, plus the **A/A floor** measured the same session.
+- **N runs, the statistic and why that statistic, and the spread**, plus the **A/A floor**
+  measured the same session. Median for symmetric noise, min for one-sided; §11 has the rule.
 - **Device time and end-to-end wall**, separately.
 - **Which instrument produced each number**, and confirmation that every timed region synced.
 - **The exact command**, reproducible from a clean checkout.

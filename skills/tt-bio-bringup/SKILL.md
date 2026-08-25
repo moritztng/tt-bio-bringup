@@ -284,7 +284,8 @@ tells you how to set your own):
 3. Place the top ops on the roofline. Compute, for each candidate lever, the ceiling implied by the
    share of time it touches. Write the prediction down before building.
 4. Build the highest-value lever. A/B it at matched protocol: same shapes, same batch, same warm
-   state, same card, N runs, median.
+   state, same card, N runs, and the statistic named: median for symmetric noise, **min** when
+   the noise is one-sided, which host contention is (`05-perf-method-and-roofline.md` §11).
 5. Re-census. Every label expires once a lever removes the traffic that justified it, and levers
    dismissed as too small grow as the others shrink.
 

@@ -16,10 +16,13 @@ circular-buffer clash, or deciding whether to keep state on device between calls
 | Device DRAM | 32 GB on a p150-class Blackhole part, ~12 GB per Wormhole chip | interleaved over 8 banks (Blackhole) / 12 (Wormhole) | ttnn allocator |
 | Host RAM | whatever the box has | pageable | Python/torch |
 
-Aggregate L1 is small but not negligible: 110 cores x 1,461,760 B = 160.8 MB, using the allocator's
-per-bank figure rather than the device's reported total for the reason in §4. A `[512, 512, 256]`
-bf16 pair tensor is 134.22 MB, 83.5% of all L1 on the chip. That kills most naive "keep the pair
-track resident" plans.
+Aggregate L1 is small but not negligible, and the number depends on which grid you are on. Say
+which. The p150 hardware grid is 13x10, so 130 x 1,461,760 B = **190.0 MB**; tt-bio clamps its main
+compute grid to 11x10, so 110 x 1,461,760 B = **160.8 MB**. Both use the allocator's per-bank figure
+rather than the device's reported total, for the reason in §4. A `[512, 512, 256]` bf16 pair tensor
+is 134.22 MB: **70.6% of the full grid's L1, 83.5% of the clamped grid's**. Either way it kills most
+naive "keep the pair track resident" plans, and a plan sized on one grid and run on the other is the
+failure in `13-failure-atlas.md` §1.
 
 **The mental shift from CUDA.** There is no cache hierarchy. L1 is an explicitly addressed per-core
 scratchpad and a compute kernel can address nothing else. Two *independent* allocators share each
@@ -109,8 +112,11 @@ the guard must decline to the DRAM-writing path. Three rules this encodes:
    encodes that default silently. One shipped helper budgeted `chunk * seq_len²` while the tensors
    it guarded were `[batch, chunk, seq, seq]`; the first caller with `diffusion_samples > 1` widened
    the chunk 32→128 and threw a CB clash in an unrelated op several calls downstream.
-3. Include fixed overhead. A ~111,104 B per-core ttnn term held exact across two grids and two
-   wheels in a fitted CB model.
+3. Include fixed overhead. Two figures are in circulation and they are not the same measurement:
+   **131,072 B** is the round 128 KiB the worked example above budgets with, and **111,104 B** is
+   what a fit to measured allocations returned, exact across two grids and two wheels. Budget with
+   131,072 and you have ~20 KB of slack per core; fit your own if you are trying to explain a
+   clash rather than avoid one. Do not mix them inside one calculation.
 
 **Guard hygiene.** Any capacity guard needs a counter proving it ADMITS at least once on a real
 input, not on a synthetic benchmark at N=128/256/384 (already tile multiples): log served/declined,

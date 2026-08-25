@@ -115,9 +115,11 @@ for op, (ns, n) in sorted(agg.items(), key=lambda x: -x[1][0])[:10]:
 Columns that matter, in order: `OP CODE`, `DEVICE KERNEL DURATION [ns]`, `GLOBAL CALL COUNT`,
 `CORE COUNT`, `MATH FIDELITY`, `INPUT_*_{W,Z,Y,X}` (format is `padded[logical]`, parse the leading
 integer), `OP TO OP LATENCY [ns]`, and the per-RISC durations. `CORE COUNT` below the full grid is
-a second limiter the roofline alone will not name: one dominant matmul read 80 of 130 cores, which
-is exactly why its per-core FPU utilization (38.5 %) and full-grid utilization (17.2 %) differed by
-2.2x.
+a second limiter the roofline alone will not name. Per-core and full-grid utilization differ by
+exactly the occupancy ratio, so a dominant matmul on 80 of 130 cores reads `130/80` = **1.63x
+better per core than it does across the grid**, and a tool that reports only the per-core figure
+makes an op with a third of the grid idle look close to its roof. Compute the ratio yourself from
+`CORE COUNT`; do not accept either number alone.
 
 **Separating kernel time from dispatch gaps.** Sum both columns. A warm, compute-bound section has
 a median `OP TO OP LATENCY` near a microsecond and a gap sum far below the kernel sum. A

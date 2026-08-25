@@ -228,7 +228,10 @@ SNR-distorted.
 
 ### 3.4 Choosing the threshold
 
-**There is no universal PCC minimum.** Accepted values by class: per-op ~0.99; full dense decoder stacks
+**There is no universal PCC minimum.** Accepted values by class, across model families and not only
+biomolecular ones, so read the bio-specific plausibility bands in `03-precision-and-numerics.md` §7
+alongside these: per-op ~0.99 here against ~0.999 there, and the tighter one is the right expectation
+for a single bio op. Full dense decoder stacks
 0.94-0.999, degrading with depth (32-layer models accepted at 0.60); MoE 0.86-0.96; encoder-decoder 0.90-0.97;
 vision components 0.75-0.79. For a folding model, per-module 0.98-0.99 on real captured inputs is the bar.
 

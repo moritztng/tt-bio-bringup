@@ -187,7 +187,7 @@ and nowhere else.
   permute `(0,3,1,2)` is a full cross-tile re-tile (untilize, blocked transpose, retilize) and measured
   **55 GB/s, 12.6% of the measured 435.2 GB/s roof** (not the 512 GB/s datasheet figure). On one
   triangle-multiplication op at N=1024 that single permute was
-  **70.4 of 118.1 ms (60%)** while the contraction matmul ran near peak (48 TFLOP/s) in under 5% of the time. The
+  **70.4 of 118.1 ms (60%)** while the contraction matmul ran at 48 TFLOP/s, 48% of the measured 100.55 TFLOP/s HiFi4 roof in under 5% of the time. The
   fix is structural: keep the tensor channel-major through the chunk loop, or fold the transpose into the matmul
   operand read (`transpose_b`).
 - **`untilize`/`to_layout` has a silent single-core fallback** for particular (tile-row, tile-column) combinations,
@@ -242,8 +242,10 @@ kernel fix. `ttnn.scatter` also rejects fp32, and int32/uint32 rows longer than 
 
 - A fused-kernel precondition declining **1120 of 1120** calls on its own check.
 - An L1-headroom predicate answering DRAM instead of L1 above N >= 560.
-- An SDPA q-chunk program config overflowing the 1.5 MiB per-core L1 budget (2.20 MB needed against 1.80 MB at 768
-  tokens, 3.39 against 2.34 at 1024) and falling back to the slow path.
+- An SDPA q-chunk program config overflowing per-core L1 and falling back to the slow path: it asked for
+  **2.20 MB per core against the 1.46 MB the allocator reports per bank** at 768 tokens, and 3.39 MB at 1024.
+  (The 1.80 and 2.34 MB figures that once appeared here were the *requested* totals under a different
+  chunk setting, not budgets; `08-memory-and-residency.md` §1 has the one number to size against.)
 
 Together: **11.1% of the fold at 768 tokens, 14.2% at 1024**, on a model whose levers were validated at 512.
 

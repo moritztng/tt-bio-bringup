@@ -138,7 +138,9 @@ artifact is the shape that ships dropped outputs.
 
 - **Single-shot legs false-alarm on their own noise.** A leg with no warm loop (one-shot design or
   affinity call) measures ±20-30% run-to-run, so a 15% threshold alarms forever on nothing. Run the
-  whole end-to-end invocation `SINGLE_SHOT_REPEAT = 3` times back-to-back and gate the median.
+  whole end-to-end invocation `SINGLE_SHOT_REPEAT = 3` times back-to-back and gate on a statistic.
+  Which statistic is decided two bullets down: the median while the box is quiet, the **min** the
+  moment host contention is in play, because contention only ever slows a rep.
 - **Warm legs: warm up, then median.** `WARMUP = 2` folds absorb first-kernel compile and are
   excluded; `REPEAT = 5` timed folds give the gated median.
 - **Host contention is one-sided noise.** It can only slow a rep, so a median of 3 still reports a

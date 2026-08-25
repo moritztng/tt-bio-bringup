@@ -159,7 +159,7 @@ Phase 0 of `SKILL.md`. Copy the templates in, write the plan, and run the gate o
 
 ```bash
 # Where the skill's files are. An install, or the clone you made to read this.
-SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
+export SKILL=$(find -L ~/.claude/skills ~/.claude/plugins/cache .claude/skills \
         -type d -name tt-bio-bringup -path '*skills*' 2>/dev/null | head -1)
 : "${SKILL:=/path/to/your/clone/of/tt-bio-bringup/skills/tt-bio-bringup}"
 test -f "$SKILL/SKILL.md" || { echo "set SKILL to the skill directory"; }

@@ -22,7 +22,9 @@ output, and that is the worst outcome available here.
 
 Procedure:
 
-1. Measure end-to-end wall clock, warm, N runs, median. Record the command.
+1. Measure end-to-end wall clock, warm, N runs. Report the median for symmetric noise and the
+   **min** when the noise is one-sided, which host contention is, and say which you used. Record
+   the command.
 2. Profile the model on device. Aggregate into an op census: op type, call count, total device time,
    share of device time.
 3. Report the residual: wall clock minus summed device time. That is host and dispatch, and it is
