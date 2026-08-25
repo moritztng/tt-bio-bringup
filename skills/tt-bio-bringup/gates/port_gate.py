@@ -93,45 +93,38 @@ AFFIRMATIVE = re.compile(r"^(yes|y|red|true|✓|✔|confirmed|went red|fail(s|ed
 #: and "yes, went from pass to fail" are answers, and a substring scan rejected both.
 NEGATIVE_VERDICT = re.compile(r"^(no|nope|not yet|never|didn'?t|did not|pass(ed)?|green|"
                               r"unknown|n/?a|none)$", re.I)
-#: Two lists, because one list cannot be both. Enumerating phrases was a losing game in both
-#: directions: adding "was green" to catch "yes, the gate was green" also rejected the honest
-#: "yes, red. Before the break it was green", which is a BETTER negative control than a bare yes.
+#: The verdict column is a VERDICT, not a note, and it is checked as a closed field rather than
+#: parsed as English. Two adversarial rounds tuned a prose classifier here and each traded one
+#: error class for the other: the round that stopped accepting "yes, the gate was green" started
+#: rejecting "yes, red. Before the break it was green", and the round that fixed that started
+#: accepting "yes, the gate passed; maxdiff 3e-4". Measured on the last set, both directions were
+#: wrong on every input: 5 of 5 honest verdicts rejected, 6 of 6 dishonest ones accepted.
 #:
-#: HARD is unconditional. No honest report of a control firing contains these, whatever else it
-#: says. "already red" is here for the other direction: a control that was red before the break
-#: proves nothing about the break.
+#: A false positive is the worse of the two. A reader whose honest, more detailed verdict is
+#: refused learns to write the bare word "yes", which every version of this check accepts.
+#:
+#: So the cell is capped instead. Inside 40 characters there is no room for a subordinate clause
+#: about the restore, the clean tree or the other test, which is where every false positive came
+#: from, and the word list below becomes decidable. Anything longer is not judged for truth at
+#: all: it is returned with "move the detail to another column", which is an instruction the
+#: reader can follow rather than an accusation the reader knows to be false.
+VERDICT_MAX = 40
+#: Inside the cap these are unambiguous. "went from pass to fail" is the one construction that
+#: names the good outcome using the word for the bad one, so it is excepted before matching.
 NEGATION_HARD = re.compile(
-    r"\b(?:"
-    r"(?:still|stayed|remain(?:s|ed)?|kept|continued)\s+(?:green|passing|to\s+pass|the\s+same)"
-    r"|did ?n[o']?t|does ?n[o']?t|never"
-    r"|no change|unchanged|no (?:effect|difference|impact)|nothing to report"
-    r"|passed anyway|still pass(?:es|ed)?"
-    r"|already (?:red|failing|broken|fail(?:ing|ed))"
-    r")\b", re.I)
-#: SOFT reports a not-fired state, which is fine ONLY if the cell also reports a fired one. That
-#: is what tells "the check was passing at 0.99 and dropped to 0.31" from "the gate passes".
-NEGATION_SOFT = re.compile(
-    r"\b(?:"
-    r"(?:was|were|is|are)\s+(?:green|passing|identical|the\s+same|fine|ok|clean)"
-    r"|(?:output|result)s?\b.{0,16}\bidentical"
-    r"|exit (?:code|status) (?:was |of )?0\b"
-    r"|(?:gate|check|test|control|it|they)\s+pass(?:es|ed)\b"
-    r"|held (?:at|steady)|held\b.{0,12}\bunchanged"
-    r")\b", re.I)
-#: Evidence that something DID move. A bare "red" counts, which is why "already red" has to be
-#: matched as HARD first: otherwise it would supply its own alibi.
-FIRED_EVIDENCE = re.compile(
-    r"\b(?:red|went red|turned red|dropped|fell|drops?|collaps(?:ed|es)|diverged|"
-    r"fail(?:s|ed|ure)?|jumped|rose|spiked|blew up|caught|maxdiff|nan|inf|"
-    r"assertion|error|to fail)\b", re.I)
+    r"\b(?:green|passing|passe[sd]|identical|unchanged|no change|nothing to report"
+    r"|already (?:red|failing|broken)|exit (?:code|status) (?:was |of )?0"
+    r"|no error|held (?:at|steady)|did ?n[o']?t|does ?n[o']?t|never|stayed|still)\b", re.I)
+FROM_PASS_TO_FAIL = re.compile(r"\bfrom pass(?:ing)? to fail|\bpass\s*(?:->|\u2192|to)\s*fail", re.I)
 
 
 def negated(cell: str) -> bool:
-    if NEGATION_HARD.search(cell):
-        return True
-    if NEGATION_SOFT.search(cell) and not FIRED_EVIDENCE.search(cell):
+    body = FROM_PASS_TO_FAIL.sub("", cell)
+    if NEGATION_HARD.search(body):
         return True
     return any(NEGATIVE_VERDICT.fullmatch(c.strip(" .!:")) for c in re.split(r"[,;:()]", cell))
+
+
 #: A threshold is a number, or a named exactness criterion.
 #: A digit alone is not a threshold: "fp32" and "v2" have one. Want a real number, or a
 #: named exactness criterion.
@@ -344,7 +337,13 @@ def check_document(path: Path, required_headings: list[str], require_tables: boo
                 if v and VAGUE_CELL.fullmatch(v):
                     problems.append(f"{path}:{n}: {cell.strip()!r} under {col!r} is not a value")
                 # A "did it go red?" cell answered "no" is the finding, not a filled cell.
-                if v and is_verdict and (
+                if v and is_verdict and len(v) > VERDICT_MAX:
+                    problems.append(
+                        f"{path}:{n}: {col!r} holds {len(v)} characters. This column is a verdict, "
+                        f"not a note: keep it under {VERDICT_MAX} and put the explanation in a "
+                        "column of its own. A sentence here is read by a person and checked by "
+                        "nobody, because this gate cannot tell which clause the negation is about.")
+                elif v and is_verdict and (
                         not AFFIRMATIVE.match(v) or negated(v)):
                     problems.append(
                         f"{path}:{n}: {col!r} says {v!r}. This column records that the test FAILED "

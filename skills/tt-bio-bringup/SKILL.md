@@ -325,13 +325,24 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/yourmodel_p
     --require-heading "Component parity" --require-heading "Negative controls"
 ```
 
-The report arm is why the parity template has a negative-controls table. It checks four things and
+The report arm is why the parity template has a negative-controls table. It checks five things and
 you should know which: the section exists, it holds a table with rows in it, no cell is blank or
-bare punctuation, and every "Went red?" cell starts with an affirmative (`yes`, `red`, `true`,
-`confirmed`, `went red`) and does not also contain a negation. So `yes - red at 0.712` and
-`red on commit abc123` are answers; `pass`, `passed`, `green`, `not yet` and `red herring, no` are
-not. What it cannot check is whether you actually ran the injection. `port_gate.py prove-red` is
-what makes that true; the table is where you record it.
+bare punctuation, every "Went red?" cell is **under 40 characters**, and within that it starts with
+an affirmative (`yes`, `red`, `true`, `confirmed`, `went red`) and does not also say green, passed,
+identical or unchanged. So `yes - red at 0.712`, `yes, maxdiff 6.25` and `red on commit abc123` are
+answers; `pass`, `green`, `not yet` and `red herring, no` are not.
+
+The length limit is the deliberate part. The gate does not read English, and when it tried, it
+rejected `yes, red - pcc dropped 0.999 to 0.31; the restore did not leave the tree dirty`, where the
+"did not" is about the restore, while accepting `yes, the gate passed; maxdiff 3e-4`, where a metric
+in the cell supplied an alibi for a sentence that says the control never fired. Both errors come
+from subordinate clauses, and 40 characters has no room for one. Write the verdict here and the
+explanation in a column of its own; a cell over the limit is returned with that instruction rather
+than judged for truth.
+
+What none of this checks is whether you actually ran the injection. `port_gate.py prove-red` is what
+makes that true: it runs the break, runs your check, and reads the exit code. The table is where you
+record what prove-red already proved.
 
 ### Phase 4 - Generality
 
