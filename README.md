@@ -44,9 +44,9 @@ nohup bash "$SKILL/run.sh" --unattended --model-name yourmodel > port-loop.log 2
 
 That is the whole setup. Two notes before you start:
 
-- **This takes weeks, not hours.** It is a real port. The skill exists to stop the three ways it
-  goes wrong: optimizing before measuring, declaring parity from a test that could not have failed,
-  and losing the thread across sessions.
+- **This is a real port, not a wrapper.** The skill exists to stop the three ways it goes wrong:
+  optimizing before measuring, declaring parity from a test that could not have failed, and losing
+  the thread across sessions.
 - **Phases 0 and 1 need no card**, so if the hardware is still in a box, start today and do day zero
   alongside.
 
@@ -156,7 +156,7 @@ list of ways a port silently goes wrong while every test stays green.
 | `11-tt-bio-integration.md` | Landing the model in the repo the way the others are landed |
 | `12-testing-and-gates.md` | Test layers, and gates that cannot pass vacuously |
 | `13-failure-atlas.md` | Symptom-indexed atlas of real failure modes |
-| `14-running-a-long-campaign.md` | Running this as a months-long agentic effort without losing the plot |
+| `14-running-a-long-campaign.md` | Running this as a multi-session agentic effort without losing the plot |
 | `15-torch-to-ttnn-op-map.md` | Which ttnn op replaces which torch op, and how to check for yourself |
 
 ## Scope

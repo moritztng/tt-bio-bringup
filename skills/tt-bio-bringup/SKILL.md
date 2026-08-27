@@ -13,7 +13,7 @@ state is not "it runs". The finished state is:
 3. **Fast.** Each hot op placed on a measured roofline, every lever above the effort bar landed and A/B proven.
 4. **Integrated.** One shared mechanism per concern, on the CLI, packaged, documented, gated.
 
-That takes weeks, not hours. The way it goes wrong is never a lack of effort. It goes wrong by
+The way it goes wrong is never a lack of effort. It goes wrong by
 optimizing before measuring, by declaring parity from a test that could not have failed, and by
 losing the thread across sessions. This skill exists to stop those three things.
 
@@ -471,7 +471,7 @@ TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/perf_regres
 | Landing it inside tt-bio properly | `references/11-tt-bio-integration.md` |
 | Test suite and release gate design | `references/12-testing-and-gates.md` |
 | A specific symptom, indexed by how it looks | `references/13-failure-atlas.md` |
-| Running this as a months-long agentic campaign | `references/14-running-a-long-campaign.md` |
+| Running this as a multi-session agentic campaign | `references/14-running-a-long-campaign.md` |
 | Which ttnn op replaces this torch op | `references/15-torch-to-ttnn-op-map.md` |
 | One small model taken from Phase 0 to Phase 6, filled in | `examples/worked-example.md` |
 
