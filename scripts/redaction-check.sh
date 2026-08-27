@@ -160,6 +160,12 @@ for entry in "${PATTERNS[@]}"; do
   # Contents, and then the PATHS. A path is published exactly as the bytes inside the file are,
   # and scanning only contents meant "notes/rack3-alice-NAME-at-DOMAIN.md" shipped and read clean.
   #
+  # The two spend-ceiling flags on the loop's own command line are literal public flag names, and
+  # the money arm reads both of them as a hit: one because a currency code sits next to a number,
+  # the other because the word next to a currency sign is what that arm looks for. They are
+  # product surface, not a number about this company, and leaving them hitting every run would
+  # train a reader to skim the section that matters.
+  #
   # The allowlist is applied to each file's text BEFORE matching, one file at a time. The earlier
   # shape matched first and re-applied the pattern to grep's own "path:line:" output, which meant
   # any pattern anchored at ^ could never survive the second pass: "^rack[0-9]" loaded, validated,
@@ -182,6 +188,8 @@ for entry in "${PATTERNS[@]}"; do
                 | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
                       -e 's|git@github\.com|ALLOWED|gI' \
                       -e 's|example\.com|ALLOWED|gI' \
+                      -e 's|--max-budget-usd|ALLOWEDFLAG|gI' \
+                      -e 's|--max-usd|ALLOWEDFLAG|gI' \
                 | grep -anPi -- "$rx" 2>/dev/null | f="$f" awk '{ print ENVIRON["f"] ":" $0 }'
             done < "$FILELIST"
             grep -zv '^\(\./\)\?scripts/redaction-check\.sh$' < "$FILELIST" \
@@ -189,6 +197,8 @@ for entry in "${PATTERNS[@]}"; do
               | sed -e 's|github\.com/moritztng|ALLOWED|gI' \
                     -e 's|git@github\.com|ALLOWED|gI' \
                     -e 's|example\.com|ALLOWED|gI' \
+                    -e 's|--max-budget-usd|ALLOWEDFLAG|gI' \
+                    -e 's|--max-usd|ALLOWEDFLAG|gI' \
               | grep -aPi -- "$rx" | sed 's|^|FILENAME: |'
           } | tr -d '\000' | cut -c1-200 )
   unreadable=$(printf '%s\n' "$hits" | grep -a '^UNREADABLE: ' | sort -u)

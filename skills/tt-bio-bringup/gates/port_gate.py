@@ -10,6 +10,11 @@ tt-bio-bringup skill is a shell command, and five of them call this script:
     python3 scripts/port_gate.py prove-red --check "<cmd>" --break "<cmd>" --restore "<cmd>" \\
         --expect-change <the file the break edits>
 
+One more asks the question the other four cannot: is the whole port done?
+
+    python3 scripts/port_gate.py status --init --model yourmodel   # write the gate manifest once
+    python3 scripts/port_gate.py status --all-phases               # exit 0 only when all 8 pass
+
 Exit 0 the gate passed, 1 the gate failed and names why, 2 it could not run (missing
 file, bad arguments) and measured nothing. Keep 1 and 2 distinct: a bad tree and a bad
 invocation are different problems.
@@ -1110,6 +1115,422 @@ def gate_prove_red(args) -> int:
     except CannotRead as e:
         return _bail(f"GATE 2: {e}")
 
+# ---------------------------------------------------------------------- status: all eight phases
+
+
+GATES_DEFAULT = "notes/PORT_GATES.md"
+STATUS_PHASES = tuple(range(8))
+PHASE_HEADING = re.compile(r"^##[ \t]+Phase[ \t]+([0-7])[ \t]*$")
+
+#: A command that cannot report a defect is not a gate. Checked on every top-level segment of a
+#: line, so `rm -rf __pycache__ && pytest ...` (which SKILL.md recommends) passes while
+#: `test -f model.py` and `echo ok` are refused -- the latter is also `prove-red`'s
+#: existence-only refusal, and the two have to agree.
+NOOP_COMMANDS = {"true", "false", ":", "echo", "printf", "exit", "test", "[", "[[", "ls", "cat",
+                 "cd", "pwd", "sleep", "touch", "head", "tail", "wc", "stat", "which", "file"}
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
+
+#: What each phase's gate block has to contain, as regexes over the whole block. Every rule is
+#: decidable from the text: this refuses a manifest that is not a gate set, it does not try to
+#: judge whether the tests behind it are good. Phases 3, 4 and 5 are the reason a
+#: correct-but-slow or fast-but-unproven port cannot reach exit 0.
+PHASE_SHAPE: dict[int, list[tuple[str, str]]] = {
+    0: [(r"port_gate\.py\s+plan\b", "`port_gate.py plan` arm"),
+        (r"port_gate\.py\s+report\b[^\n]*PORT_STATE", "`port_gate.py report` arm on PORT_STATE")],
+    1: [(r"port_gate\.py\s+determinism\b", "`port_gate.py determinism` arm on the capture"),
+        (r"\bpytest\b", "pytest arm replaying the fixtures")],
+    2: [(r"\bpytest\b", "pytest arm (every reference parameter consumed exactly once)"),
+        (r"port_gate\.py\s+determinism\b", "`port_gate.py determinism` arm on the forward pass")],
+    3: [(r"\bpytest\b", "pytest arm for component and end-to-end parity"),
+        (r"port_gate\.py\s+report\b", "`port_gate.py report` arm on the parity document"),
+        (r"--require-heading\s+.?Component parity", 'report --require-heading "Component parity"'),
+        (r"--require-heading\s+.?Negative controls", 'report --require-heading "Negative controls"')],
+    4: [(r"\bpytest\b", "pytest arm running the size ladder")],
+    5: [(r"port_gate\.py\s+report\b", "`port_gate.py report` arm on the performance document"),
+        (r"--require-heading\s+.?Measured roofs", 'report --require-heading "Measured roofs"'),
+        (r"--require-heading\s+.?Op census", 'report --require-heading "Op census"'),
+        (r"--require-heading\s+.?Levers", 'report --require-heading "Levers"'),
+        (r"\bpytest\b", "the parity pytest, re-run (a lever that moves the answer is not a lever)")],
+    6: [(r"\bpytest\b", "pytest arm from the repository's own suite")],
+    7: [],
+}
+#: Phase 6 lands packaging, the release gate and the suite; phase 7 is the standing gate plus the
+#: perf regression. One command cannot be all of either.
+PHASE_MIN_COMMANDS = {6: 3, 7: 2}
+#: Phases that touch hardware. `TT_VISIBLE_DEVICES=` set but empty reads as a deliberate CPU-only
+#: run: every device test skips, pytest exits 0, and the gate reports green having opened no
+#: device. `${CARD:?...}` makes the shell refuse instead. SKILL.md spells this out; here it is
+#: enforced, because it is the cheapest way to fake a green port.
+DEVICE_PHASES = (2, 3, 4, 5, 6, 7)
+
+
+def _split_top(cmd: str) -> list[str]:
+    """Whitespace-split a command, but not inside quotes or ``${...}``.
+
+    ``TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 ...`` is the shape of every
+    device gate, and its assignment value contains spaces. A plain ``cmd.split()`` reads
+    ``TT_VISIBLE_DEVICES=${CARD:?set`` as the command name, so every check that looks at the first
+    word silently stops working on exactly the phases that matter most.
+    """
+    out: list[str] = []
+    cur = ""
+    depth = 0
+    quote = ""
+    for ch in cmd:
+        if quote:
+            cur += ch
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            cur += ch
+            quote = ch
+        elif ch == "{":
+            depth += 1
+            cur += ch
+        elif ch == "}":
+            depth = max(0, depth - 1)
+            cur += ch
+        elif ch.isspace() and depth == 0:
+            if cur:
+                out.append(cur)
+                cur = ""
+        else:
+            cur += ch
+    if cur:
+        out.append(cur)
+    return out
+
+
+def _segments(cmd: str) -> list[str]:
+    """Split on top-level ``&&``, ``||``, ``;`` and ``|``, respecting quotes and ``${...}``."""
+    out: list[str] = []
+    cur = ""
+    depth = 0
+    quote = ""
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if quote:
+            cur += ch
+            if ch == quote:
+                quote = ""
+        elif ch in "'\"":
+            cur += ch
+            quote = ch
+        elif ch == "{":
+            depth += 1
+            cur += ch
+        elif ch == "}":
+            depth = max(0, depth - 1)
+            cur += ch
+        elif depth == 0 and (cmd.startswith("&&", i) or cmd.startswith("||", i)):
+            out.append(cur)
+            cur = ""
+            i += 1
+        elif depth == 0 and ch in ";|":
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    out.append(cur)
+    return [s.strip() for s in out if s.strip()]
+
+
+def _first_word(segment: str) -> str:
+    """The command name, after any ``NAME=VALUE`` prefixes and a leading ``env``."""
+    toks = _split_top(segment)
+    i = 0
+    while i < len(toks) and (_ASSIGN.match(toks[i]) or toks[i] == "env"):
+        i += 1
+    return toks[i] if i < len(toks) else ""
+
+
+def read_gate_manifest(path: Path) -> tuple[dict[int, list[str]], list[str]]:
+    """Parse ``notes/PORT_GATES.md`` into {phase: [command, ...]}, plus a list of problems.
+
+    One ``## Phase N`` heading per phase, 0 through 7, each followed by exactly one fenced block.
+    Every non-blank, non-comment line in the fence is one command, on one physical line: a
+    backslash-continued command read line by line becomes two commands, the first of which is a
+    truncated one that exits non-zero for a reason that is not a defect.
+    """
+    problems: list[str] = []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    blocks: dict[int, list[str]] = {}
+    seen: list[int] = []
+    i = 0
+    while i < len(lines):
+        m = PHASE_HEADING.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        phase = int(m.group(1))
+        seen.append(phase)
+        i += 1
+        cmds: list[str] = []
+        fences = 0
+        while i < len(lines) and not PHASE_HEADING.match(lines[i]):
+            if lines[i].startswith("```"):
+                fences += 1
+                if fences > 2:
+                    problems.append(f"Phase {phase}: more than one fenced block. One block per phase.")
+                    break
+                i += 1
+                while i < len(lines) and not lines[i].startswith("```"):
+                    line = lines[i].rstrip()
+                    if line.strip() and not line.lstrip().startswith("#"):
+                        cmds.append(line)
+                    i += 1
+            i += 1
+        if phase in blocks:
+            problems.append(f"Phase {phase}: two `## Phase {phase}` headings. Exactly one each.")
+        blocks[phase] = cmds
+    for phase in STATUS_PHASES:
+        if phase not in blocks:
+            problems.append(f"Phase {phase}: no `## Phase {phase}` heading.")
+        elif not blocks[phase]:
+            problems.append(f"Phase {phase}: heading present but its gate block is empty.")
+    if seen and seen != sorted(seen):
+        problems.append(f"Phases are out of order: {seen}. They run in order, so write them in order.")
+    return blocks, problems
+
+
+def validate_gate_manifest(blocks: dict[int, list[str]]) -> list[str]:
+    """Refuse a manifest that is not a real gate set. Every rule here is decidable."""
+    problems: list[str] = []
+    for phase in STATUS_PHASES:
+        cmds = blocks.get(phase) or []
+        if not cmds:
+            continue
+        want = PHASE_MIN_COMMANDS.get(phase, 1)
+        if len(cmds) < want:
+            problems.append(f"Phase {phase}: {len(cmds)} command(s), needs at least {want}.")
+        for cmd in cmds:
+            if cmd.rstrip().endswith("\\"):
+                problems.append(f"Phase {phase}: `{cmd[:60]}` ends in a backslash. "
+                                "One command, one physical line: unwrap it.")
+            segs = _segments(cmd)
+            if segs and all(_first_word(s) in NOOP_COMMANDS for s in segs):
+                problems.append(f"Phase {phase}: `{cmd[:70]}` cannot fail for any reason but its "
+                                "own absence. A phase gate that cannot go red is not a gate.")
+        block = "\n".join(cmds)
+        for pattern, what in PHASE_SHAPE[phase]:
+            if not re.search(pattern, block):
+                problems.append(f"Phase {phase}: the gate block has no {what}.")
+        if phase in DEVICE_PHASES:
+            if "TT_VISIBLE_DEVICES=" not in block:
+                problems.append(f"Phase {phase}: runs on hardware but no command pins a card with "
+                                "`TT_VISIBLE_DEVICES=${CARD:?set CARD first}`. An unpinned run "
+                                "takes every card on the host.")
+        for pos in [m.end() for m in re.finditer(r"TT_VISIBLE_DEVICES=", block)]:
+            if not block[pos:].startswith("${CARD:?"):
+                problems.append(
+                    f"Phase {phase}: `TT_VISIBLE_DEVICES=` is not followed by `${{CARD:?...}}`. "
+                    "With CARD unset that expands to set-but-empty, which the conftest reads as a "
+                    "deliberate CPU-only run: every device test skips, pytest exits 0, and this "
+                    "gate reports green having opened no device.")
+    return problems
+
+
+def _run_gate_command(cmd: str, repo: Path, timeout: int) -> int:
+    """Run one gate command through ``bash -c`` from the repo root. Returns -1 if it hung.
+
+    Environment is inherited, so ``${CARD:?...}``, ``$REF_PY`` and ``&&`` mean what a person
+    typing the command gets. Non-zero is data, never an exception: 2 has to stay distinguishable
+    from 1, and that distinction is the whole FAIL / NOT-STARTED split.
+    """
+    proc = subprocess.Popen(["bash", "-c", cmd], cwd=str(repo), start_new_session=True)
+    if timeout <= 0:
+        return proc.wait()
+    try:
+        return proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), 9)
+        except OSError:
+            proc.kill()
+        proc.wait()
+        return -1
+
+
+MANIFEST_HEADER = """\
+# Port gates - %MODEL%
+
+Generated by `python3 scripts/port_gate.py status --init --model %MODEL%`, from the exit gates in
+`SKILL.md`. This is the port's definition of done: `status --all-phases` exits 0 only when every
+command below exits 0, and the loop in `run.sh` runs until it does.
+
+Edit it before you start the loop, not during. `run.sh` hashes this file and
+`scripts/port_gate.py` on its first run and aborts if either moves, because a termination
+condition the agent inside the loop can weaken is not a termination condition.
+
+Paths follow the skill's convention. If your port puts a file somewhere else, change it here
+first, so the gate and the port agree about where things live.
+"""
+
+#: The eight gates, verbatim from SKILL.md's "Exit gate" blocks, backslash continuations unwrapped
+#: and `yourmodel` substituted. %MODEL% is the model name.
+MANIFEST_PHASES: tuple[tuple[int, str, tuple[str, ...]], ...] = (
+    (0, "Map the model", (
+        "python3 scripts/port_gate.py plan notes/PORT_PLAN.md",
+        'python3 scripts/port_gate.py report notes/PORT_STATE.md --no-tables'
+        ' --require-heading "Environment" --require-heading "Decisions taken"',
+    )),
+    (1, "Golden capture on CPU", (
+        "./env/bin/python3 scripts/port_gate.py determinism"
+        " --run '$REF_PY scripts/%MODEL%_port/capture.py --len 117 --seed 0'"
+        " --artifact scripts/%MODEL%_port/parity_artifacts/%MODEL%_117.pt",
+        "./env/bin/python3 -m pytest tests/test_%MODEL%_fixtures.py -q",
+    )),
+    (2, "Skeleton on device", (
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest"
+        " tests/test_%MODEL%_weights.py -q",
+        "./env/bin/python3 scripts/port_gate.py determinism"
+        " --run 'TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3"
+        " scripts/%MODEL%_port/forward.py --len 64 --out"
+        " scripts/%MODEL%_port/fw_card${CARD:?set CARD first}.npy'"
+        " --artifact scripts/%MODEL%_port/fw_card${CARD:?set CARD first}.npy",
+    )),
+    (3, "Component parity", (
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest"
+        " tests/test_%MODEL%_parity.py -q",
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3"
+        " scripts/%MODEL%_port/task_metric.py --set notes/eval_set.txt",
+        "./env/bin/python3 scripts/port_gate.py report docs/%MODEL%-parity.md"
+        ' --require-heading "Component parity" --require-heading "Negative controls"',
+    )),
+    (4, "Generality", (
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest"
+        " tests/test_%MODEL%_ladder.py -q",
+    )),
+    (5, "Performance", (
+        "./env/bin/python3 scripts/port_gate.py report docs/%MODEL%-perf.md"
+        ' --require-heading "Measured roofs" --require-heading "Op census"'
+        ' --require-heading "Levers"',
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest"
+        " tests/test_%MODEL%_parity.py -q",
+    )),
+    (6, "Integration and gates", (
+        "./env/bin/python3 scripts/packaging_smoke.py",
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/release_gate.py",
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 -m pytest"
+        " tests/test_perf_model_coverage.py tests/test_repo_root_clean.py -q",
+    )),
+    (7, "Keep it", (
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/release_gate.py",
+        "TT_VISIBLE_DEVICES=${CARD:?set CARD first} ./env/bin/python3 scripts/perf_regression.py",
+    )),
+)
+MODEL_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,40}$")
+
+
+def _init_manifest(args) -> int:
+    path = Path(args.gates)
+    if not args.model:
+        print("GATE 2: --init needs --model NAME, the name the gate paths are written for.")
+        return 2
+    if not MODEL_NAME.match(args.model):
+        print(f"GATE 2: --model {args.model!r} is not a name. Letters, digits, `_` and `-`, "
+              "starting with a letter.")
+        return 2
+    if path.exists():
+        print(f"GATE 2: {path} already exists. It is the port's definition of done and it is "
+              "frozen once the loop starts, so this refuses to rewrite it. Delete it deliberately "
+              "if you really want a new one.")
+        return 2
+    out = [MANIFEST_HEADER.replace("%MODEL%", args.model)]
+    for phase, title, cmds in MANIFEST_PHASES:
+        out.append(f"\n## Phase {phase}\n\n{title}.\n\n```bash")
+        out.extend(c.replace("%MODEL%", args.model) for c in cmds)
+        out.append("```")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print(f"GATE 0: wrote {path} for model {args.model}. Read it now: it is what "
+          "`status --all-phases` will hold the port to, and the loop freezes it on first run.")
+    return 0
+
+
+def gate_status(args) -> int:
+    """Phase-by-phase state of the whole port. Exit 0 only when all eight gates pass."""
+    if args.init:
+        return _init_manifest(args)
+    if not args.all_phases:
+        print("GATE 2: say what to check. `status --all-phases` runs every phase gate; "
+              "`status --init --model NAME` writes the gate manifest.")
+        return 2
+
+    repo = Path(args.repo).resolve()
+    gates = Path(args.gates)
+    if not gates.is_absolute():
+        gates = repo / gates
+    if not gates.is_file():
+        print(f"GATE 2: {gates} does not exist. Generate it with\n"
+              f"    python3 scripts/port_gate.py status --init --model yourmodel")
+        return 2
+
+    # The fork's copy is what the gate commands invoke; this file is the copy the loop runs. If
+    # they differ, the commands below are not the ones this validator just checked.
+    fork_copy = repo / "scripts" / "port_gate.py"
+    if not fork_copy.is_file():
+        print(f"GATE 2: {fork_copy} does not exist. Five of the eight gates call it:\n"
+              f"    mkdir -p scripts && cp \"$SKILL/gates/port_gate.py\" scripts/")
+        return 2
+    me = Path(__file__).resolve()
+    if _sha(fork_copy) != _sha(me):
+        print(f"GATE 2: {fork_copy} is not byte-identical to {me}. Re-copy it:\n"
+              f"    cp \"$SKILL/gates/port_gate.py\" scripts/port_gate.py")
+        return 2
+
+    blocks, problems = read_gate_manifest(gates)
+    problems += validate_gate_manifest(blocks)
+    if problems:
+        print(f"GATE 2: {gates} is not a usable gate set. {len(problems)} problem(s):")
+        for p in problems:
+            print(f"  {p}")
+        return 2
+
+    results: dict[int, tuple[str, str]] = {}
+    stopped = False
+    for phase in STATUS_PHASES:
+        if stopped:
+            results[phase] = ("NOT-REACHED", "")
+            continue
+        state, detail = "PASS", ""
+        for cmd in blocks[phase]:
+            print(f"--- phase {phase}: {cmd}")
+            rc = _run_gate_command(cmd, repo, args.timeout)
+            if rc == 0:
+                continue
+            if rc == -1:
+                print(f"GATE 2: phase {phase} gate ran for {args.timeout}s without finishing and "
+                      f"was killed:\n  {cmd}\nA gate that hangs measured nothing. A wedged card is "
+                      "the usual cause; `references/09-devices-and-hardware-operations.md` has the "
+                      "reset.")
+                return 2
+            # 2 is port_gate's own "could not run": a missing document, an artifact not written
+            # yet. That is a phase not started, not a phase failing.
+            state = "NOT-STARTED" if rc == 2 else "FAIL"
+            detail = f"(exit {rc}) {cmd}"
+            break
+        results[phase] = (state, detail)
+        if state != "PASS":
+            stopped = True
+
+    npass = sum(1 for s, _ in results.values() if s == "PASS")
+    print("")
+    for phase in STATUS_PHASES:
+        state, detail = results[phase]
+        print(f"PHASE {phase}: {state}" + (f"  {detail}" if detail else ""))
+    print(f"ALL-PHASES: {npass}/{len(STATUS_PHASES)} PASS")
+    if npass == len(STATUS_PHASES):
+        print("The port is done: every phase gate exits 0.")
+        return 0
+    nxt = next(p for p in STATUS_PHASES if results[p][0] != "PASS")
+    print(f"NEXT: Phase {nxt}")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1145,6 +1566,25 @@ def main(argv: list[str] | None = None) -> int:
                    help="a file the break must actually modify; refuses with exit 2 if it did not. "
                         "Use it whenever the break is a sed or a patch.")
     p.set_defaults(fn=gate_prove_red)
+
+    p = sub.add_parser("status", help="the whole port: every phase gate, and one exit code")
+    p.add_argument("--all-phases", action="store_true",
+                   help="run every phase gate in order, stopping at the first that is not green. "
+                        "Exit 0 only when all eight pass: this is the port's definition of done.")
+    p.add_argument("--init", action="store_true",
+                   help="write the gate manifest from SKILL.md's exit gates and stop. Refuses to "
+                        "overwrite an existing one.")
+    p.add_argument("--model", metavar="NAME", help="model name the manifest's paths are written "
+                                                  "for, with --init")
+    p.add_argument("--gates", default=GATES_DEFAULT, metavar="PATH",
+                   help=f"the gate manifest (default {GATES_DEFAULT})")
+    p.add_argument("--repo", default=".", metavar="PATH",
+                   help="the fork's root; gate commands run from there (default .)")
+    p.add_argument("--timeout", type=int, default=0, metavar="SECONDS",
+                   help="kill a gate command's whole process group after this long and exit 2. "
+                        "0, the default, waits forever. A wedged card hangs pytest indefinitely, "
+                        "and an unattended loop then waits indefinitely with it.")
+    p.set_defaults(fn=gate_status)
 
     args = ap.parse_args(argv)
     try:

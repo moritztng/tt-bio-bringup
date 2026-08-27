@@ -17,6 +17,13 @@
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
+# --emit DIR also copies the documents this script assembles into DIR, once they have passed. That
+# is what scripts/loop-selftest.sh builds its fixture from: the loop's self-test needs four
+# gate-passing documents, and taking them from the script that proves they pass beats writing a
+# second set that nothing checks.
+EMIT=""
+[ "${1:-}" = "--emit" ] && { EMIT="${2:-}"; shift 2; }
+
 PY=${PY:-python3}
 GATE=skills/tt-bio-bringup/gates/port_gate.py
 EX=skills/tt-bio-bringup/examples/worked-example.md
@@ -357,6 +364,12 @@ for head, prefix in CASES:
 sys.exit(1 if bad else 0)
 PYEOF
 [ "$fail" -eq 0 ] && echo "  ok    every pasted GATE line matches the wording in port_gate.py"
+
+if [ "$fail" -eq 0 ] && [ -n "$EMIT" ]; then
+    mkdir -p "$EMIT" || exit 2
+    cp "$TMP/plan.md" "$TMP/state.md" "$TMP/parity.md" "$TMP/perf.md" "$EMIT/" || exit 2
+    echo "  ok    emitted plan.md state.md parity.md perf.md to $EMIT"
+fi
 
 [ "$fail" -eq 0 ] && echo "worked example passes the gates it prescribes" && exit 0
 echo
