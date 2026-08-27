@@ -4,8 +4,9 @@ A Claude Code skill that ports a PyTorch biomolecular model to Tenstorrent hardw
 [tt-bio](https://github.com/moritztng/tt-bio) fork and finishes the job: parity-verified against a
 CPU golden, optimized against a measured roofline, packaged and gated like the models already there.
 
-Written for a team with a proprietary model, a PyTorch reference, Tenstorrent cards and no prior TT
-experience. **No GPU is required at any point** — the CPU reference run is the golden.
+All you need is a PyTorch reference implementation, Tenstorrent cards and no prior TT experience.
+The model can be your own, proprietary, or an open one. **No GPU is required at any point** — the
+CPU reference run is the golden.
 
 ## Quickstart
 
