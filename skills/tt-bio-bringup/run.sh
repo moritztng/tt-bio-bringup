@@ -141,6 +141,19 @@ if [ ! -f scripts/port_gate.py ]; then
   mkdir -p scripts && cp "$GATE_SRC" scripts/port_gate.py || die "cannot copy the gate script"
   echo "copied $GATE_SRC to scripts/port_gate.py"
 elif [ "$(sha_of scripts/port_gate.py)" != "$(sha_of "$GATE_SRC")" ]; then
+  # Two different situations, and telling them apart costs one comparison. If the fork's copy still
+  # hashes to what an earlier run froze, nothing edited it here and it is the skill that moved,
+  # which is what upgrading the skill does. Saying "refusing to overwrite" to that is friction for
+  # no reason.
+  FROZEN_PY="$(awk '$1=="port_gate"{print $2}' "$LOOPDIR/baseline.sha256" 2>/dev/null)"
+  if [ -n "$FROZEN_PY" ] && [ "$FROZEN_PY" = "$(sha_of scripts/port_gate.py)" ]; then
+    die "the skill's gate script has moved, not your fork's.
+scripts/port_gate.py still hashes to what this loop froze, so nothing edited it here. Take the new
+version and re-freeze against it:
+    cp \"$GATE_SRC\" scripts/port_gate.py
+    rm $LOOPDIR/baseline.sha256
+and note in $STATE which version the port is gated by from now on."
+  fi
   die "scripts/port_gate.py differs from $GATE_SRC.
 Refusing to overwrite it: if it was edited, replacing it here would launder the edit. Diff them,
 then \`cp \"$GATE_SRC\" scripts/port_gate.py\` yourself."
@@ -293,8 +306,13 @@ echo "  agent    $CLAUDE --permission-mode bypassPermissions"
 echo "  limits   $MAX_ITER iterations, \$$MAX_USD, stall after $STALL_N, ${TIMEOUT}s per step"
 echo
 
+# 2>&1, so the detect works whichever stream this CLI prints --help on. Discarding stderr and
+# guessing wrong costs a silently-unapplied per-iteration ceiling, which is invisible until a
+# runaway iteration eats the run's whole allowance.
 HAVE_BUDGET=""
-"$CLAUDE" --help 2>/dev/null | grep -q -- --max-budget-usd && HAVE_BUDGET=1
+"$CLAUDE" --help 2>&1 | grep -q -- --max-budget-usd && HAVE_BUDGET=1
+[ -n "$HAVE_BUDGET" ] || echo "NOTE: this claude has no per-invocation spend flag, so --max-usd is
+enforced between iterations only: one runaway iteration can overshoot it."
 
 # Baseline the stall fingerprint on the tree as it is now, so the first iteration is compared
 # against something and "three iterations moved nothing" counts three, not four.
@@ -332,9 +350,9 @@ what it is stuck on."
   fi
   REMAIN="$(awk -v m="$MAX_USD" -v s="$SPENT" 'BEGIN{printf "%.4f", m - s}')"
   if awk -v r="$REMAIN" 'BEGIN{exit !(r <= 0.01)}'; then
-    end SPEND-CEILING 5 "This run reached the ceiling it was given, \$$MAX_USD, with $PASSED of 8
-gates green and \$$SPENT spent. Nothing is lost: raise --max-usd and start the loop again, it
-resumes from $STATE."
+    end SPEND-CEILING 5 "This run reached its allowance of \$$MAX_USD. $PASSED of 8 gates are
+green and \$$SPENT is spent. Nothing is lost: raise --max-usd and start the loop again, it resumes
+from $STATE."
   fi
 
   PROMPT="You are continuing a Tenstorrent model port. This is an unattended loop: a fresh session
@@ -377,9 +395,9 @@ loop cannot make progress. That means the permission mode is not the one this lo
 for a settings.json or a hook in this repository that overrides it."
   fi
   if [ "$SUBTYPE" = "error_max_budget_usd" ]; then
-    end SPEND-CEILING 5 "The session ran out of the ceiling this run was given, \$$MAX_USD, with
-$PASSED of 8 gates green and \$$SPENT spent. Nothing is lost: raise --max-usd and start the loop
-again, it resumes from $STATE."
+    end SPEND-CEILING 5 "The session ran out of this run's allowance of \$$MAX_USD. $PASSED of 8
+gates are green and \$$SPENT is spent. Nothing is lost: raise --max-usd and start the loop again,
+it resumes from $STATE."
   fi
   if [ "$ARC" -eq 124 ] || [ "$ARC" -eq 137 ]; then
     end ABORT 2 "The agent ran for ${TIMEOUT}s without finishing and was killed. See $JSON and

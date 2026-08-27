@@ -169,6 +169,10 @@ to work the next phase. It ends on exactly four things, and appends the reason t
 Blocked is a legitimate ending, not a failure. So is stalled. What the loop refuses to do is finish
 quietly on a port that is not done.
 
+`--max-usd` is a ceiling on this run, checked between iterations and passed down to each session, so
+a run can overshoot it by roughly one iteration's cost. Restarting is a deliberate act and nothing is
+lost when it stops, which is why the ceiling is per run rather than cumulative.
+
 **What the loop decides:** which phase is next, and whether the port is done. Both come from gate
 exit codes, so both are decidable.
 
