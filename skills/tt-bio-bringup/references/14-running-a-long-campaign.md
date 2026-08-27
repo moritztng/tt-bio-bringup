@@ -153,7 +153,7 @@ freezes it, and it is the one file here worth arguing with: if your port puts a 
 else, change the path there rather than working around it later.
 
 Then, while `port_gate.py status --all-phases` is not green, the loop starts a fresh Claude session
-to work the next phase. It ends on exactly four things, and appends the reason to
+to work the next phase. Seven things end it, and it appends which one to
 `notes/PORT_STATE.md`, which is the file you will read when you come back:
 
 | `LOOP-ENDED:` | Exit | What it means |
