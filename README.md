@@ -130,6 +130,27 @@ Three things to hold Claude to:
    decision. It refuses without `--expect-change`, because a break that edited nothing looks
    exactly like a gate that is decoration.
 
+### Or let it run itself
+
+`run.sh` runs the gates and starts a fresh Claude session on the next phase until all eight are
+green. One command, from your fork's root:
+
+```bash
+export CARD=0                        # UMD chip id, from `tt-smi -ls`
+nohup bash "$SKILL/run.sh" --unattended --model-name yourmodel > port-loop.log 2>&1 &
+```
+
+`--unattended` is required and means `--permission-mode bypassPermissions`: the sessions run
+commands in your fork without asking. Run it on a branch, in a checkout you are willing to have
+edited.
+
+It stops when the port is green, when three iterations move nothing, when it reaches the dollar
+ceiling you gave it, or when a session hits a decision only you can make, and appends which to
+`notes/PORT_STATE.md`. The first run writes `notes/PORT_GATES.md`, the eight commands it will hold
+the port to: read that before you walk away.
+`skills/tt-bio-bringup/references/14-running-a-long-campaign.md` §3.1 has the rest, including what
+the loop does not decide and why tamper detection is not tamper prevention.
+
 ## Scope
 
 Covers: protein folding and structure prediction, protein language models, diffusion structure

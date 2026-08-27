@@ -270,8 +270,13 @@ print("%s\t%s\t%s\t%s\t%s\t%s" % (d.get("total_cost_usd") or 0, d.get("subtype",
 PYJSON
 }
 
+# A months-long run would otherwise leave thousands of these. The last 50 is enough to see what
+# the recent sessions did and why.
 prune_iters() {
-  ls -1t "$LOOPDIR"/iter-*.json 2>/dev/null | tail -n +51 | while IFS= read -r f; do rm -f "$f"; done
+  for pat in json err; do
+    ls -1t "$LOOPDIR"/iter-*."$pat" 2>/dev/null | tail -n +51 \
+      | while IFS= read -r f; do rm -f "$f"; done
+  done
 }
 
 if grep -qE '^BLOCKED: ' "$STATE"; then
@@ -303,7 +308,9 @@ while : ; do
   echo "======== iteration $ITER  $(date -u +%Y-%m-%dT%H:%M:%SZ) ========"
   # Through tee, not a command substitution: a phase gate can be a pytest run that takes an hour,
   # and a customer tailing the log wants to see it while it happens.
-  "${TOUT[@]+"${TOUT[@]}"}" "$PY" "$GATE_SRC" status --all-phases \
+  # --timeout is passed through rather than wrapping this call in `timeout`: the limit belongs to
+  # each gate COMMAND, and a whole eight-phase run legitimately takes longer than any one of them.
+  "$PY" "$GATE_SRC" status --all-phases \
       --gates "$GATES" --repo . --timeout "$TIMEOUT" 2>&1 | tee "$LOOPDIR/status.txt"
   RC=${PIPESTATUS[0]}
   STATUS_OUT="$(cat "$LOOPDIR/status.txt")"
@@ -318,11 +325,6 @@ measured roofline, each proven by a command in $GATES that you can re-run yourse
     end ABORT 2 "The gate could not run, so it measured nothing, and the loop will not treat that
 as \"keep working\". The output above names the reason."
   fi
-  if [ "$RC" -eq 124 ] || [ "$RC" -eq 137 ]; then
-    end ABORT 2 "The gate ran for ${TIMEOUT}s without finishing and was killed. A wedged card is
-the usual cause: references/09-devices-and-hardware-operations.md has the reset."
-  fi
-
   if [ "$ITER" -gt "$MAX_ITER" ]; then
     end MAX-ITERATIONS 6 "Reached the $MAX_ITER-iteration ceiling with $PASSED of 8 gates green.
 Read the phase lines above, decide whether it is progressing, and raise --max-iterations or fix
@@ -374,17 +376,24 @@ Rules:
 loop cannot make progress. That means the permission mode is not the one this loop passes; check
 for a settings.json or a hook in this repository that overrides it."
   fi
+  if [ "$SUBTYPE" = "error_max_budget_usd" ]; then
+    end SPEND-CEILING 5 "The session ran out of the ceiling this run was given, \$$MAX_USD, with
+$PASSED of 8 gates green and \$$SPENT spent. Nothing is lost: raise --max-usd and start the loop
+again, it resumes from $STATE."
+  fi
   if [ "$ARC" -eq 124 ] || [ "$ARC" -eq 137 ]; then
     end ABORT 2 "The agent ran for ${TIMEOUT}s without finishing and was killed. See $JSON and
 $LOOPDIR/iter-$ITER.err."
   fi
-  if [ "$ARC" -ne 0 ] && [ "$SUBTYPE" != "error_max_budget_usd" ]; then
+  # `is_error` as well as the exit code: the CLI can report a failed session and still exit 0, and
+  # then the loop would count a session that did nothing as an ordinary iteration.
+  if [ "$ARC" -ne 0 ] || [ "$ISERR" = "true" ]; then
     FAILS=$((FAILS + 1))
     if [ "$FAILS" -ge 2 ]; then
       end ABORT 2 "Two Claude sessions in a row failed to run (exit $ARC, $SUBTYPE). This is the
 CLI or the account, not the port. See $JSON and $LOOPDIR/iter-$ITER.err."
     fi
-    echo "  session failed; retrying once"
+    echo "  session failed ($SUBTYPE); retrying once"
   else
     FAILS=0
   fi

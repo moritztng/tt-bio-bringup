@@ -1272,9 +1272,14 @@ def read_gate_manifest(path: Path) -> tuple[dict[int, list[str]], list[str]]:
         fences = 0
         while i < len(lines) and not PHASE_HEADING.match(lines[i]):
             if lines[i].startswith("```"):
+                # `fences` counts OPENING fences only: the closing one is consumed by the inner
+                # loop below. Counting both made "> 2" unreachable for exactly two blocks, so a
+                # second block silently merged into the first and the parser's own rule did not
+                # hold.
                 fences += 1
-                if fences > 2:
-                    problems.append(f"Phase {phase}: more than one fenced block. One block per phase.")
+                if fences > 1:
+                    problems.append(f"Phase {phase}: {fences} fenced blocks. One block per phase, "
+                                    "so there is one place the gate for a phase lives.")
                     break
                 i += 1
                 while i < len(lines) and not lines[i].startswith("```"):

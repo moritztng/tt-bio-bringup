@@ -95,6 +95,10 @@ does not object: that test allowlists root *files* only.
 Work them in order. Each phase has an exit gate that is a command. Do not start a phase before its
 predecessor's gate exits 0, and do not start a phase before reading the reference docs it names.
 
+`port_gate.py status --all-phases` runs all eight and exits 0 only when every one passes, which is
+this port's definition of done. `$SKILL/run.sh` is the loop that works the phases until it does;
+`references/14-running-a-long-campaign.md` §3.1 covers what it decides and what it leaves to you.
+
 Every gate below is written for a model called `yourmodel`; substitute your own name. Gate commands
 name `./env/bin/python3` rather than a bare `python3`, because a gate that silently ran under the
 system interpreter has measured the wrong thing, and that is not visible in its output.

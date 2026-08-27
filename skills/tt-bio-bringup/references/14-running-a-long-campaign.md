@@ -122,8 +122,9 @@ Two authoring constraints that prevent whole classes of this:
 
 Scope a deliverable as complete or as one-shot, and say which in the brief. If it is complete:
 
-- The unit gets restarted, by you, until every part is landed and verified. Number the sessions
-  (`s1`, `s2`, ...) in the state doc so it stays readable.
+- The unit gets restarted until every part is landed and verified. `run.sh` does that restarting
+  (§3.1); do it by hand and number the sessions (`s1`, `s2`, ...) in the state doc so it stays
+  readable.
 - Never report done while any stated priority is owed, deferred or pending. "P1 done, P2 to P4 owed"
   reported as a conclusion means someone has to notice and re-queue it by hand, which is exactly the
   work the brief was supposed to remove.
@@ -135,6 +136,83 @@ Scope a deliverable as complete or as one-shot, and say which in the brief. If i
 
 Be strict because "done" is sticky. A unit reported complete one stage short does not get retried,
 and nobody notices until someone reads the state doc weeks later.
+
+### 3.1 Running it as a loop
+
+One command, from the root of your fork:
+
+```bash
+export CARD=0                     # UMD chip id, from `tt-smi -ls`
+export REF_PY=./env/bin/python3   # the interpreter that can import your reference
+bash "$SKILL/run.sh" --unattended --model-name yourmodel
+```
+
+The first run writes `notes/PORT_GATES.md` from the eight exit gates in `SKILL.md`, with your model
+name in the paths. **Read it before you go further.** It is the port's definition of done, the loop
+freezes it, and it is the one file here worth arguing with: if your port puts a document somewhere
+else, change the path there rather than working around it later.
+
+Then, while `port_gate.py status --all-phases` is not green, the loop starts a fresh Claude session
+to work the next phase. It ends on exactly four things, and appends the reason to
+`notes/PORT_STATE.md`, which is the file you will read when you come back:
+
+| `LOOP-ENDED:` | Exit | What it means |
+|---|---|---|
+| `GREEN` | 0 | All eight gates exit 0. Complete, parity-verified, on a measured roofline. |
+| `STALLED` | 4 | Three iterations in a row moved nothing. It is stuck, not working. |
+| `SPEND-CEILING` | 5 | It reached the dollar ceiling you gave it. Raise it and start again. |
+| `BLOCKED` | 7 | A session hit a §10 decision and wrote the question at the top of `PORT_STATE.md`. |
+| `TAMPER` | 3 | The gate moved after the loop froze it. See below. |
+| `MAX-ITERATIONS` | 6 | It hit the iteration ceiling. |
+| `ABORT` | 2 | The gate could not run, or the CLI could not. The output names which. |
+
+Blocked is a legitimate ending, not a failure. So is stalled. What the loop refuses to do is finish
+quietly on a port that is not done.
+
+**What the loop decides:** which phase is next, and whether the port is done. Both come from gate
+exit codes, so both are decidable.
+
+**What it does not decide:** everything in §10, and the three judgments `port_gate.py` says in its
+own header that it cannot make. Whether your parity threshold is scientifically right. Whether your
+op census is honest. Whether the test you proved red asserts anything about your model. A green loop
+means every gate you wrote exits 0. If a gate is decoration, so is the green, and the loop cannot
+tell. That is what `prove-red` and the negative-controls table are for, and they are still your job.
+
+**Fresh session per iteration, not a resumed one.** §4 is the reason: continuity lives in the files,
+and over weeks a resumed session's context is the first thing to break. The cost is that each
+iteration re-reads `PORT_STATE.md` and the phase's references from cold.
+
+**The loop runs the gate. It never reads a gate result the agent reports**, and it never reads the
+CLI's exit code as progress: under a permission mode that denies its tools, `claude -p` does nothing
+and still exits 0.
+
+**The gate is a file the agent could edit.** An agent that is stuck and wants to finish can weaken a
+gate, and the loop would then exit green on a port that is not done. So the loop hashes
+`notes/PORT_GATES.md` and `scripts/port_gate.py` before the first iteration, re-checks them before
+every one, and aborts with a diff if either moved.
+
+That **detects** tampering. It does not prevent it: an agent with a shell could rewrite the
+manifest, the frozen copy and the hash together. Three things make that unattractive rather than
+impossible. The loop, not the agent, runs the gate. The frozen hash is held in the loop's own
+process, where an iteration cannot reach it. And `.port_loop/baseline/` is committed, so a rewrite
+sits in the git history. Claiming prevention here would be the same vacuity as a gate nobody has
+watched go red.
+
+`status --all-phases` also refuses a manifest that is not a gate set, before it runs anything: a
+command that cannot fail for any reason but its own absence, a `--require-heading` that has gone
+missing from the parity or performance arm, a `TT_VISIBLE_DEVICES=` that is not
+`${CARD:?set CARD first}`, a phase that has been deleted. That last pair matter most.
+`TT_VISIBLE_DEVICES=` set-but-empty is read as a deliberate CPU-only run, so every device test skips
+and pytest exits 0; and dropping Phase 4 or 5 is how a port becomes "done" while still slow or
+untested at size.
+
+Two things to know before you start it. `--unattended` is required and means
+`--permission-mode bypassPermissions`: the sessions run commands in your fork without asking. There
+is no useful attended mode, because a denied session makes no progress and reports no error. And the
+loop's mechanics are proven by `scripts/loop-selftest.sh` in the skill's repository, on a throwaway
+port directory: it advances phase by phase, exits 0 on the iteration the last gate goes green and
+not one earlier, aborts when a gate is weakened mid-run, stops after three iterations that move
+nothing, and resumes from `PORT_STATE.md` after a `kill -9` with no repair.
 
 ---
 
